@@ -72,3 +72,16 @@ Como a idade cruza o ano (uma criança de 18 meses viveu parte do 1º e parte do
 
 - c) usar a faixa da idade atual na data da entrevista — mais simples — **(sugestão)**
 - d) somar proporcionalmente os meses vividos em cada faixa — mais exato
+
+## Respostas (Emerson, 2026-10-14)
+
+Todas as sugestões foram aceitas:
+
+| Item | Resposta |
+|---|---|
+| 1 | **a** — curvas da OMS por idade e sexo |
+| 2.1 | **a** — referência: todas as famílias da mesma pesquisa |
+| 2.2 | **a** — painel mostra a média do z-score do recorte filtrado |
+| 2.3 | **a** — pesos iguais |
+| 3 | **a** — incluir "Semana gestacional atual" e classificar por Atalah; respostas antigas sem o dado ficam fora |
+| 4 | **a** + **c** — tabela da Caderneta, faixa pela idade na data da entrevista |
