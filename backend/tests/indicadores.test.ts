@@ -2,18 +2,19 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import request from "supertest";
 import { Prisma } from "@prisma/client";
 
+vi.mock("../src/models/sessaoModel.js", async () => (await import("./helpers/sessao.js")).moduloSessaoFalso);
 vi.mock("../src/models/indicadorModel.js");
 vi.mock("../src/helper/auditoria.js");
 
 import { createApp } from "../src/app.js";
 import { indicadorModel } from "../src/models/indicadorModel.js";
 import { registrarLog } from "../src/helper/auditoria.js";
-import { gerarToken } from "../src/helper/token.js";
+import { tokenDe } from "./helpers/sessao.js";
 
 const app = createApp();
-const tokenGestor = gerarToken({ sub: "u1", papel: "GESTOR" });
-const tokenAdmin = gerarToken({ sub: "u2", papel: "ADMIN" });
-const tokenColetador = gerarToken({ sub: "u3", papel: "COLETADOR" });
+const tokenGestor = tokenDe("u1", "GESTOR");
+const tokenAdmin = tokenDe("u2", "ADMIN");
+const tokenColetador = tokenDe("u3", "COLETADOR");
 
 const CORPO_VALIDO = {
   codigo: "ZONA_RURAL",

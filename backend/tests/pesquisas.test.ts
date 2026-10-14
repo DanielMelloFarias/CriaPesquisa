@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import request from "supertest";
 
+vi.mock("../src/models/sessaoModel.js", async () => (await import("./helpers/sessao.js")).moduloSessaoFalso);
 vi.mock("../src/models/pesquisaModel.js");
 vi.mock("../src/models/perguntaModel.js");
 vi.mock("../src/helper/auditoria.js");
@@ -9,11 +10,11 @@ vi.mock("../src/helper/versao.js");
 import { createApp } from "../src/app.js";
 import { pesquisaModel } from "../src/models/pesquisaModel.js";
 import { registrarLog } from "../src/helper/auditoria.js";
-import { gerarToken } from "../src/helper/token.js";
+import { tokenDe } from "./helpers/sessao.js";
 
 const app = createApp();
-const tokenGestor = gerarToken({ sub: "u1", papel: "GESTOR" });
-const tokenColetador = gerarToken({ sub: "u2", papel: "COLETADOR" });
+const tokenGestor = tokenDe("u1", "GESTOR");
+const tokenColetador = tokenDe("u2", "COLETADOR");
 
 const UUID = "11111111-1111-1111-1111-111111111111";
 

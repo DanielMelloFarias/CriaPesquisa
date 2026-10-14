@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import request from "supertest";
 
+vi.mock("../src/models/sessaoModel.js", async () => (await import("./helpers/sessao.js")).moduloSessaoFalso);
 vi.mock("../src/models/indicadorModel.js");
 vi.mock("../src/models/indicadorCalculoModel.js");
 vi.mock("../src/helper/auditoria.js");
@@ -11,11 +12,11 @@ import { indicadorCalculoModel } from "../src/models/indicadorCalculoModel.js";
 import { invalidarCache } from "../src/helper/cacheIndicadores.js";
 import { montarResposta, ItemDuplicado } from "../src/helper/motor/avaliadores.js";
 import { registrarLog } from "../src/helper/auditoria.js";
-import { gerarToken } from "../src/helper/token.js";
+import { tokenDe } from "./helpers/sessao.js";
 
 const app = createApp();
-const token = gerarToken({ sub: "u1", papel: "VISUALIZADOR" });
-const tokenGestor = gerarToken({ sub: "u2", papel: "GESTOR" });
+const token = tokenDe("u1", "VISUALIZADOR");
+const tokenGestor = tokenDe("u2", "GESTOR");
 
 const VCRAS = {
   id: "vcras", codigo: "VCRAS", tipo: "PROPORCAO", casasDecimais: 1, status: "ATIVO",
