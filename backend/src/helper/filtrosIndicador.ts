@@ -14,6 +14,18 @@ function texto(valor: unknown): string | undefined {
   return typeof valor === "string" && valor.trim() !== "" ? valor : undefined;
 }
 
+const SO_DATA = /^\d{4}-\d{2}-\d{2}$/;
+const UM_DIA_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Limite final de período. "AAAA-MM-DD" vira meia-noite UTC e, com `lte`,
+ * deixaria o último dia inteiro de fora: só com a data, vale até o fim do dia.
+ * Data e hora completas ficam como vieram.
+ */
+export function fimDoPeriodo(bruto: string, d: Date): Date {
+  return SO_DATA.test(bruto.trim()) ? new Date(d.getTime() + UM_DIA_MS - 1) : d;
+}
+
 /** Data ilegível é recusada: ignorá-la devolveria o período inteiro como se fosse o pedido. */
 function data(valor: unknown, campo: "de" | "ate"): Date | undefined {
   const bruto = texto(valor);
@@ -22,7 +34,7 @@ function data(valor: unknown, campo: "de" | "ate"): Date | undefined {
   if (Number.isNaN(d.getTime())) {
     throw new HttpError(422, "FILTRO_INVALIDO", `Data inválida em "${campo}"`, { [campo]: bruto });
   }
-  return d;
+  return campo === "ate" ? fimDoPeriodo(bruto, d) : d;
 }
 
 export function extrairFiltrosIndicador(query: Request["query"]): FiltrosIndicador {

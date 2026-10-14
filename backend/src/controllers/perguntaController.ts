@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { perguntaModel } from "../models/perguntaModel.js";
 import { pesquisaModel } from "../models/pesquisaModel.js";
 import { registrarLog } from "../helper/auditoria.js";
+import { invalidarCache } from "../helper/cacheIndicadores.js";
 import { HttpError } from "../middleware/errorHandler.js";
 import type { SecaoInput, PerguntaInput, ReordenarInput } from "../helper/validators.js";
 
@@ -90,6 +91,7 @@ export async function criarPergunta(req: Request, res: Response) {
 
   const dados = req.body as PerguntaInput;
   const pergunta = await perguntaModel.criarPergunta(pesquisaId, dados);
+  invalidarCache(); // o cálculo conhece as perguntas existentes
   await registrarLog({
     entidade: "Pergunta",
     entidadeId: pergunta.id,
@@ -112,6 +114,7 @@ export async function atualizarPergunta(req: Request, res: Response) {
 
   const dados = req.body as Partial<PerguntaInput>;
   const pergunta = await perguntaModel.atualizarPergunta(id, dados);
+  invalidarCache(); // pergunta ou opções mudaram: o número em cache pode estar velho
   await registrarLog({
     entidade: "Pergunta",
     entidadeId: id,
@@ -134,6 +137,7 @@ export async function deletarPergunta(req: Request, res: Response) {
   await exigirPesquisaRascunho(perguntaAtual.pesquisaId);
 
   await perguntaModel.deletarPergunta(id);
+  invalidarCache(); // indicador que usava a pergunta passa a ficar incompleto
   await registrarLog({
     entidade: "Pergunta",
     entidadeId: id,

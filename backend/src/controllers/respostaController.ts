@@ -5,8 +5,13 @@ import type { ListarRespostasFiltros } from "../models/respostaModel.js";
 import { pesquisaModel } from "../models/pesquisaModel.js";
 import { registrarLog } from "../helper/auditoria.js";
 import { invalidarCache } from "../helper/cacheIndicadores.js";
-import { validarRespostaContraPerguntas } from "../helper/validarResposta.js";
+import {
+  validarRespostaContraPerguntas,
+  normalizarOpcoesParaTexto,
+  type PerguntaParaValidacao,
+} from "../helper/validarResposta.js";
 import { parsePaginacao } from "../helper/paginacao.js";
+import { fimDoPeriodo } from "../helper/filtrosIndicador.js";
 import { HttpError } from "../middleware/errorHandler.js";
 import type { CriarRespostaInput, AtualizarRespostaInput, ReprovarRespostaInput } from "../helper/validators.js";
 
@@ -19,6 +24,12 @@ function parseQueryDate(valor: unknown): Date | undefined {
   if (!texto) return undefined;
   const data = new Date(texto);
   return Number.isNaN(data.getTime()) ? undefined : data;
+}
+
+/** Limite final: só com a data, inclui o dia inteiro (ver fimDoPeriodo). */
+function parseQueryDateFim(valor: unknown): Date | undefined {
+  const data = parseQueryDate(valor);
+  return data ? fimDoPeriodo(parseQueryString(valor)!, data) : undefined;
 }
 
 function parseStatus(valor: unknown): StatusResposta | undefined {
@@ -35,7 +46,7 @@ export function extrairFiltrosBase(query: Request["query"]): Omit<ListarResposta
     unidade: parseQueryString(query.unidade),
     status: parseStatus(query.status),
     de: parseQueryDate(query.de),
-    ate: parseQueryDate(query.ate),
+    ate: parseQueryDateFim(query.ate),
   };
 }
 
@@ -44,6 +55,18 @@ export function extrairFiltrosListagem(query: Request["query"]): ListarRespostas
     ...extrairFiltrosBase(query),
     ...parsePaginacao(query, 50),
   };
+}
+
+/**
+ * Caminho único de criação e edição: valida contra as perguntas e grava as opções
+ * pelo texto (ver normalizarOpcoesParaTexto).
+ */
+function validarEPreparar<T extends CriarRespostaInput>(perguntas: PerguntaParaValidacao[], dados: T): T {
+  const erros = validarRespostaContraPerguntas(perguntas, dados.itens);
+  if (erros.length > 0) {
+    throw new HttpError(422, "VALIDACAO_RESPOSTA", "Resposta inválida", erros);
+  }
+  return { ...dados, itens: normalizarOpcoesParaTexto(perguntas, dados.itens) };
 }
 
 export async function criar(req: Request, res: Response) {
@@ -56,11 +79,7 @@ export async function criar(req: Request, res: Response) {
     throw new HttpError(409, "PESQUISA_NAO_PUBLICADA", "pesquisa não está publicada");
   }
 
-  const dados = req.body as CriarRespostaInput;
-  const erros = validarRespostaContraPerguntas(pesquisa.perguntas, dados.itens);
-  if (erros.length > 0) {
-    throw new HttpError(422, "VALIDACAO_RESPOSTA", "Resposta inválida", erros);
-  }
+  const dados = validarEPreparar(pesquisa.perguntas, req.body as CriarRespostaInput);
 
   const resposta = await respostaModel.criar(pesquisaId, usuario.id, dados);
   invalidarCache();
@@ -92,11 +111,7 @@ export async function atualizar(req: Request, res: Response) {
   const pesquisa = await pesquisaModel.obterPorId(atual.pesquisaId);
   if (!pesquisa) throw new HttpError(404, "NAO_ENCONTRADA", "Pesquisa não encontrada");
 
-  const dados = req.body as AtualizarRespostaInput;
-  const erros = validarRespostaContraPerguntas(pesquisa.perguntas, dados.itens);
-  if (erros.length > 0) {
-    throw new HttpError(422, "VALIDACAO_RESPOSTA", "Resposta inválida", erros);
-  }
+  const dados = validarEPreparar(pesquisa.perguntas, req.body as AtualizarRespostaInput);
 
   const resposta = await respostaModel.atualizar(id, dados);
   invalidarCache();

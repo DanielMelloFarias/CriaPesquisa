@@ -93,6 +93,55 @@ describe("POST /api/pesquisas/:id/respostas", () => {
   });
 });
 
+describe("opção selecionada é gravada pelo texto (o motor compara por texto)", () => {
+  const UUID_SEXO = "33333333-3333-3333-3333-333333333333";
+  const PESQUISA = {
+    id: "p1",
+    status: "PUBLICADA",
+    perguntas: [
+      {
+        id: UUID_SEXO,
+        enunciado: "Sexo",
+        tipo: "MULTIPLA_ESCOLHA",
+        obrigatoria: false,
+        opcoes: [
+          { id: "op-f", texto: "Feminino" },
+          { id: "op-m", texto: "Masculino" },
+        ],
+      },
+    ],
+  };
+  // Uma pelo id, outra já pelo texto: as duas chegam ao model como texto.
+  const CORPO = { itens: [{ perguntaId: UUID_SEXO, opcoesSelecionadas: ["op-f", "Masculino"] }] };
+
+  beforeEach(() => {
+    vi.mocked(pesquisaModel.obterPorId).mockResolvedValue(PESQUISA as never);
+    vi.mocked(respostaModel.obterPorId).mockResolvedValue({ id: "r1", pesquisaId: "p1", coletadorId: "u1" } as never);
+    vi.mocked(respostaModel.criar).mockResolvedValue({ id: "r1" } as never);
+    vi.mocked(respostaModel.atualizar).mockResolvedValue({ id: "r1" } as never);
+  });
+
+  it("na criação", async () => {
+    const res = await request(app)
+      .post("/api/pesquisas/p1/respostas")
+      .set("Authorization", `Bearer ${tokenColetador}`)
+      .send(CORPO);
+    expect(res.status).toBe(201);
+    const dados = vi.mocked(respostaModel.criar).mock.calls[0]![2];
+    expect(dados.itens[0]!.opcoesSelecionadas).toEqual(["Feminino", "Masculino"]);
+  });
+
+  it("na edição", async () => {
+    const res = await request(app)
+      .put("/api/respostas/r1")
+      .set("Authorization", `Bearer ${tokenGestor}`)
+      .send(CORPO);
+    expect(res.status).toBe(200);
+    const dados = vi.mocked(respostaModel.atualizar).mock.calls[0]![1];
+    expect(dados.itens[0]!.opcoesSelecionadas).toEqual(["Feminino", "Masculino"]);
+  });
+});
+
 describe("GET /api/pesquisas/:id/respostas", () => {
   it("6) lista respostas (mockado) -> 200 com total/page/pageSize/itens", async () => {
     vi.mocked(pesquisaModel.obterPorId).mockResolvedValue({ id: "p1", status: "PUBLICADA", perguntas: [] } as never);

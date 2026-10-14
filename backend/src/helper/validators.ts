@@ -176,9 +176,17 @@ const indicadorBaseSchema = z.object({
 
 /**
  * Regras entre campos, as mesmas na criação e na edição. Na edição valem sobre o
- * corpo enviado: quem mexe no recorte manda `recorte` e `recorteConfig` juntos.
+ * registro mesclado (gravado + corpo), não só sobre o corpo: ver
+ * `regrasIndicadorMescladoSchema`, aplicado em indicadorController.atualizar.
  */
-function regrasDoIndicador(dados: Partial<z.infer<typeof indicadorBaseSchema>>, ctx: z.RefinementCtx) {
+interface CamposComRegra {
+  status?: string;
+  motivoIncompleto?: string;
+  recorte?: string;
+  recorteConfig?: unknown;
+}
+
+function regrasDoIndicador(dados: CamposComRegra, ctx: z.RefinementCtx) {
   if (dados.status === "DEFINICAO_INCOMPLETA" && !dados.motivoIncompleto?.trim()) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
@@ -205,5 +213,16 @@ function regrasDoIndicador(dados: Partial<z.infer<typeof indicadorBaseSchema>>, 
 export const criarIndicadorSchema = indicadorBaseSchema.superRefine(regrasDoIndicador);
 export type CriarIndicadorInput = z.infer<typeof criarIndicadorSchema>;
 
-export const atualizarIndicadorSchema = indicadorBaseSchema.partial().superRefine(regrasDoIndicador);
+// Sem as regras entre campos: só dá para conferi-las com o registro gravado em mãos.
+export const atualizarIndicadorSchema = indicadorBaseSchema.partial();
 export type AtualizarIndicadorInput = z.infer<typeof atualizarIndicadorSchema>;
+
+/** As mesmas regras de `criarIndicadorSchema`, sobre o registro já mesclado (gravado + corpo). */
+export const regrasIndicadorMescladoSchema = z
+  .object({
+    status: indicadorBaseSchema.shape.status,
+    motivoIncompleto: z.string().optional(),
+    recorte: indicadorBaseSchema.shape.recorte,
+    recorteConfig: z.unknown().optional(),
+  })
+  .superRefine(regrasDoIndicador);
