@@ -1,5 +1,5 @@
 # ── Etapa 1: build ────────────────────────────────────────────────────────────
-FROM node:20-slim AS build
+FROM node:22-slim AS build
 
 # O Prisma precisa do OpenSSL para gerar/rodar o client.
 RUN apt-get update && apt-get install -y --no-install-recommends openssl \
@@ -23,7 +23,7 @@ RUN npm run build
 RUN npm prune --omit=dev
 
 # ── Etapa 2: execução ─────────────────────────────────────────────────────────
-FROM node:20-slim AS runtime
+FROM node:22-slim AS runtime
 
 RUN apt-get update && apt-get install -y --no-install-recommends openssl \
     && rm -rf /var/lib/apt/lists/*

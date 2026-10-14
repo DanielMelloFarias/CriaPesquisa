@@ -24,7 +24,7 @@ docs/        modelo ER e documentação das pesquisas
 
 ## Pré-requisitos
 
-- Node.js 20+
+- Node.js 22+
 - PostgreSQL — **opcional**: o projeto sobe um Postgres embutido em dev (`npm run db`), sem precisar instalar nada. Também há um `docker-compose.yml` se preferir container.
 
 ## Como rodar
