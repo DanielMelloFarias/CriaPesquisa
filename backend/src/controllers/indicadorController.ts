@@ -7,7 +7,7 @@ import { HttpError } from "../middleware/errorHandler.js";
 import { parsePaginacao } from "../helper/paginacao.js";
 import { validarConfig, indicadoresReferenciados } from "../helper/indicadorConfig.js";
 import { ordenarPorDependencia, CicloDetectado } from "../helper/dependencias.js";
-import type { CriarIndicadorInput, AtualizarIndicadorInput } from "../helper/validators.js";
+import { regrasIndicadorMescladoSchema, type CriarIndicadorInput, type AtualizarIndicadorInput } from "../helper/validators.js";
 import { indicadorCalculoModel } from "../models/indicadorCalculoModel.js";
 import { extrairFiltrosIndicador, chaveDeCache } from "../helper/filtrosIndicador.js";
 import { lerCache, gravarCache, invalidarCache, geracaoAtual } from "../helper/cacheIndicadores.js";
@@ -104,7 +104,20 @@ export async function atualizar(req: Request, res: Response) {
   const atual = await indicadorModel.obterPorId(id);
   if (!atual) throw new HttpError(404, "NAO_ENCONTRADO", "Indicador não encontrado");
 
-  const dados = req.body as AtualizarIndicadorInput;
+  const dados = { ...(req.body as AtualizarIndicadorInput) };
+
+  // As regras entre campos valem sobre o que vai ficar gravado, não só sobre o corpo:
+  // quem manda só o status (ou só o recorte) aproveita o motivo (ou a config) já gravado.
+  const statusFinal = dados.status ?? atual.status;
+  regrasIndicadorMescladoSchema.parse({
+    status: statusFinal,
+    motivoIncompleto: dados.motivoIncompleto ?? atual.motivoIncompleto ?? undefined,
+    recorte: dados.recorte ?? atual.recorte ?? undefined,
+    recorteConfig: dados.recorteConfig ?? atual.recorteConfig ?? undefined,
+  });
+  // Motivo só descreve DEFINICAO_INCOMPLETA: fora dela, não grava sobra do corpo.
+  if (statusFinal !== "DEFINICAO_INCOMPLETA") delete dados.motivoIncompleto;
+
   const tipo = dados.tipo ?? (atual.tipo as CriarIndicadorInput["tipo"]);
   const dependencias = conferirConfig(tipo, dados.config ?? atual.config);
   await conferirReferencias(dependencias, dados.pesquisaId);

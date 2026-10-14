@@ -232,6 +232,7 @@ describe("PUT /api/indicadores/:id", () => {
   });
 
   it("rebaixa para DEFINICAO_INCOMPLETA sem motivo -> 422", async () => {
+    vi.mocked(indicadorModel.obterPorId).mockResolvedValue({ id: "i1", tipo: "PROPORCAO", config: CORPO_VALIDO.config, status: "ATIVO", motivoIncompleto: null } as never);
     const res = await request(app)
       .put("/api/indicadores/i1")
       .set("Authorization", `Bearer ${tokenGestor}`)
@@ -241,12 +242,64 @@ describe("PUT /api/indicadores/:id", () => {
   });
 
   it("recorteConfig sem recorte na edição -> 422", async () => {
+    vi.mocked(indicadorModel.obterPorId).mockResolvedValue({ id: "i1", tipo: "PROPORCAO", config: CORPO_VALIDO.config, status: "ATIVO", recorte: null, recorteConfig: null } as never);
     const res = await request(app)
       .put("/api/indicadores/i1")
       .set("Authorization", `Bearer ${tokenGestor}`)
       .send({ recorteConfig: { substituicoes: [{ de: "p1", para: "p2" }] } });
     expect(res.status).toBe(422);
     expect(indicadorModel.atualizar).not.toHaveBeenCalled();
+  });
+
+  describe("regras entre campos valem sobre o registro mesclado (gravado + corpo)", () => {
+    const GRAVADO = { id: "i1", tipo: "PROPORCAO", config: CORPO_VALIDO.config, recorte: null, recorteConfig: null };
+    const RECORTE_CONFIG = { substituicoes: [{ de: "p1", para: "p2" }] };
+
+    beforeEach(() => {
+      vi.mocked(indicadorModel.atualizar).mockResolvedValue({ id: "i1" } as never);
+    });
+
+    it("motivo em branco num indicador já DEFINICAO_INCOMPLETA -> 422", async () => {
+      vi.mocked(indicadorModel.obterPorId).mockResolvedValue({ ...GRAVADO, status: "DEFINICAO_INCOMPLETA", motivoIncompleto: "falta régua" } as never);
+      const res = await request(app)
+        .put("/api/indicadores/i1")
+        .set("Authorization", `Bearer ${tokenGestor}`)
+        .send({ motivoIncompleto: "  " });
+      expect(res.status).toBe(422);
+      expect(res.body.error.details.fieldErrors.motivoIncompleto).toBeDefined();
+      expect(indicadorModel.atualizar).not.toHaveBeenCalled();
+    });
+
+    it("motivo enviado para indicador que não é DEFINICAO_INCOMPLETA não é gravado", async () => {
+      vi.mocked(indicadorModel.obterPorId).mockResolvedValue({ ...GRAVADO, status: "ATIVO", motivoIncompleto: null } as never);
+      const res = await request(app)
+        .put("/api/indicadores/i1")
+        .set("Authorization", `Bearer ${tokenGestor}`)
+        .send({ nome: "Novo nome", motivoIncompleto: "sobra" });
+      expect(res.status).toBe(200);
+      const dados = vi.mocked(indicadorModel.atualizar).mock.calls[0]![1];
+      expect(dados.motivoIncompleto ?? null).toBeNull();
+    });
+
+    it("rebaixa para DEFINICAO_INCOMPLETA quando o registro já tem motivo -> 200", async () => {
+      vi.mocked(indicadorModel.obterPorId).mockResolvedValue({ ...GRAVADO, status: "INATIVO", motivoIncompleto: "falta régua" } as never);
+      const res = await request(app)
+        .put("/api/indicadores/i1")
+        .set("Authorization", `Bearer ${tokenGestor}`)
+        .send({ status: "DEFINICAO_INCOMPLETA" });
+      expect(res.status).toBe(200);
+      expect(indicadorModel.atualizar).toHaveBeenCalledOnce();
+    });
+
+    it("recorte ANTES_APOS quando o registro já tem recorteConfig -> 200", async () => {
+      vi.mocked(indicadorModel.obterPorId).mockResolvedValue({ ...GRAVADO, status: "ATIVO", recorteConfig: RECORTE_CONFIG } as never);
+      const res = await request(app)
+        .put("/api/indicadores/i1")
+        .set("Authorization", `Bearer ${tokenGestor}`)
+        .send({ recorte: "ANTES_APOS" });
+      expect(res.status).toBe(200);
+      expect(indicadorModel.atualizar).toHaveBeenCalledOnce();
+    });
   });
 });
 
