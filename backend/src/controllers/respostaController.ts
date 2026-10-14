@@ -11,6 +11,7 @@ import {
   type PerguntaParaValidacao,
 } from "../helper/validarResposta.js";
 import { parsePaginacao } from "../helper/paginacao.js";
+import { fimDoPeriodo } from "../helper/filtrosIndicador.js";
 import { HttpError } from "../middleware/errorHandler.js";
 import type { CriarRespostaInput, AtualizarRespostaInput, ReprovarRespostaInput } from "../helper/validators.js";
 
@@ -23,6 +24,12 @@ function parseQueryDate(valor: unknown): Date | undefined {
   if (!texto) return undefined;
   const data = new Date(texto);
   return Number.isNaN(data.getTime()) ? undefined : data;
+}
+
+/** Limite final: só com a data, inclui o dia inteiro (ver fimDoPeriodo). */
+function parseQueryDateFim(valor: unknown): Date | undefined {
+  const data = parseQueryDate(valor);
+  return data ? fimDoPeriodo(parseQueryString(valor)!, data) : undefined;
 }
 
 function parseStatus(valor: unknown): StatusResposta | undefined {
@@ -39,7 +46,7 @@ export function extrairFiltrosBase(query: Request["query"]): Omit<ListarResposta
     unidade: parseQueryString(query.unidade),
     status: parseStatus(query.status),
     de: parseQueryDate(query.de),
-    ate: parseQueryDate(query.ate),
+    ate: parseQueryDateFim(query.ate),
   };
 }
 

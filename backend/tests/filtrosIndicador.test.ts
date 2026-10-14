@@ -16,6 +16,14 @@ describe("extrairFiltrosIndicador", () => {
     expect(f.de?.toISOString().slice(0, 10)).toBe("2026-01-01");
   });
 
+  it("`ate` só com a data inclui o dia inteiro (fim do dia)", () => {
+    expect(extrairFiltrosIndicador({ ate: "2026-06-30" }).ate?.toISOString()).toBe("2026-06-30T23:59:59.999Z");
+  });
+
+  it("`ate` com data e hora completas fica como veio", () => {
+    expect(extrairFiltrosIndicador({ ate: "2026-06-30T12:00:00.000Z" }).ate?.toISOString()).toBe("2026-06-30T12:00:00.000Z");
+  });
+
   it("data inválida em `de` é recusada (422), não ignorada", () => {
     expect(() => extrairFiltrosIndicador({ de: "ontem" })).toThrow(
       expect.objectContaining({ status: 422, code: "FILTRO_INVALIDO" }),
