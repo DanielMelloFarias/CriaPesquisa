@@ -35,6 +35,28 @@ function pertenceAsOpcoes(pergunta: PerguntaParaValidacao, valor: string): boole
 }
 
 /**
+ * Troca a opção selecionada pelo id pelo seu texto. A validação aceita os dois,
+ * mas o motor de indicadores e o filtro de sexo comparam por texto: gravar o id
+ * faria a resposta sumir das contas. Valor que não é id de opção fica como veio.
+ */
+export function normalizarOpcoesParaTexto<T extends ItemParaValidacao>(
+  perguntas: PerguntaParaValidacao[],
+  itens: T[],
+): T[] {
+  const textoPorId = new Map<string, Map<string, string>>(
+    perguntas.map((pergunta) => [
+      pergunta.id,
+      new Map((pergunta.opcoes ?? []).flatMap((o) => (o.texto === undefined ? [] : [[o.id, o.texto] as const]))),
+    ]),
+  );
+  return itens.map((item) => {
+    if (!item.opcoesSelecionadas) return item;
+    const textos = textoPorId.get(item.perguntaId);
+    return { ...item, opcoesSelecionadas: item.opcoesSelecionadas.map((v) => textos?.get(v) ?? v) };
+  });
+}
+
+/**
  * Valida os itens de uma resposta contra as perguntas da pesquisa.
  * Função pura: não acessa banco de dados. Retorna uma lista de mensagens de
  * erro (vazia quando a resposta é válida).
