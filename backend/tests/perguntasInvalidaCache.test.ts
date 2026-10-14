@@ -4,15 +4,16 @@ import request from "supertest";
 vi.mock("../src/models/perguntaModel.js");
 vi.mock("../src/models/pesquisaModel.js");
 vi.mock("../src/helper/auditoria.js");
+vi.mock("../src/models/sessaoModel.js", async () => (await import("./helpers/sessao.js")).moduloSessaoFalso);
 
 import { createApp } from "../src/app.js";
 import { perguntaModel } from "../src/models/perguntaModel.js";
 import { pesquisaModel } from "../src/models/pesquisaModel.js";
 import { lerCache, gravarCache, invalidarCache } from "../src/helper/cacheIndicadores.js";
-import { gerarToken } from "../src/helper/token.js";
+import { tokenDe } from "./helpers/sessao.js";
 
 const app = createApp();
-const auth = `Bearer ${gerarToken({ sub: "u1", papel: "GESTOR" })}`;
+const auth = `Bearer ${tokenDe("u1", "GESTOR")}`;
 const PERGUNTA = {
   enunciado: "Sexo",
   tipo: "ESCOLHA_UNICA",

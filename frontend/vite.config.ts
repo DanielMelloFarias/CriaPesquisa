@@ -20,5 +20,12 @@ export default defineConfig({
       },
     },
   },
-  test: { globals: true, environment: "jsdom", setupFiles: ["./vitest.setup.ts"] },
+  test: {
+    globals: true,
+    environment: "jsdom",
+    setupFiles: ["./vitest.setup.ts"],
+    // Os testes de App fazem `await import("./App.js")`, que transforma o app
+    // inteiro; com a máquina ocupada isso passa dos 5 s padrão.
+    testTimeout: 20000,
+  },
 });
