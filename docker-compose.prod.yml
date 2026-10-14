@@ -35,6 +35,28 @@ services:
         condition: service_healthy
     restart: "no"
 
+  # Cria as contas-base, municípios e as pesquisas. Roda só quando chamado:
+  #   docker compose -f docker-compose.prod.yml --env-file .env.prod run --rm seed
+  # Usa a etapa `build` da imagem porque o seed é TypeScript (tsx), e a imagem
+  # final só leva as dependências de produção.
+  seed:
+    build:
+      context: ./backend
+      target: build
+    command: ["npm", "run", "seed"]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL}
+      SEED_PASSWORD: ${SEED_PASSWORD}
+      SEED_EMAIL_DOMINIO: ${SEED_EMAIL_DOMINIO}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migracao:
+        condition: service_completed_successfully
+    profiles: ["seed"]
+    restart: "no"
+
   api:
     build:
       context: ./backend

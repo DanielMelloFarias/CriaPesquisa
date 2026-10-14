@@ -24,7 +24,7 @@ docs/        modelo ER e documentação das pesquisas
 
 ## Pré-requisitos
 
-- Node.js 20+
+- Node.js 22+
 - PostgreSQL — **opcional**: o projeto sobe um Postgres embutido em dev (`npm run db`), sem precisar instalar nada. Também há um `docker-compose.yml` se preferir container.
 
 ## Como rodar
@@ -164,6 +164,32 @@ banco não protege contra perda da máquina.
 ```bash
 cp .env.prod.example .env.prod      # preencha JWT_SECRET, senhas e domínios
 docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+
+# Só na primeira vez: contas-base, municípios e pesquisas.
+docker compose -f docker-compose.prod.yml --env-file .env.prod --profile seed run --rm seed
+```
+
+Gere os segredos com algo como `node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"`.
+`SEED_PASSWORD` precisa atender à política de senha — o seed recusa senha fraca em produção.
+
+Conferência depois de subir: `curl http://localhost:8080/api/health` deve responder
+`{"status":"ok", ... "banco":"ok"}`, e entrar com `admin<SEED_EMAIL_DOMINIO>` leva direto
+para a troca de senha.
+
+**Backup em produção:** o banco não publica porta, então o `npm run backup` (que roda no
+host) não alcança ele. Use `scripts/backup-docker.sh`, que faz o `pg_dump` dentro do
+contêiner, grava em `backups/` e aplica a mesma retenção (`BACKUP_RETENCAO`, padrão 30):
+
+```cron
+0 3 * * * cd /opt/criapesquisa && ./scripts/backup-docker.sh >> /var/log/criapesquisa-backup.log 2>&1
+```
+
+Restauração (num banco de teste primeiro):
+
+```bash
+C="docker compose -f docker-compose.prod.yml --env-file .env.prod exec -T postgres"
+$C createdb -U cria_user restauro_teste
+$C pg_restore -U cria_user -d restauro_teste --no-owner < backups/<arquivo>.dump
 ```
 
 Sobe quatro serviços: `postgres`, `migracao` (aplica as migrations e sai), `api` e `web`
@@ -176,7 +202,7 @@ Pontos que o deploy assume:
 - `TRUST_PROXY=1` já vem configurado no compose: é o que faz o rate limit de login enxergar
   o IP real de quem chama, e não o do nginx.
 - O Postgres **não expõe porta no host** — acesso administrativo só por túnel.
-- O primeiro `npm run seed` precisa rodar uma vez para criar as contas-base.
+- O seed roda uma vez, pelo serviço `seed` (perfil `seed`), para criar as contas-base.
 
 ## Segurança e dados pessoais
 
