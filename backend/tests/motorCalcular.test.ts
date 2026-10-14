@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll } from "vitest";
 import { calcular, type IndicadorParaCalculo } from "../src/helper/motor/calcular.js";
 import { montarResposta } from "../src/helper/motor/avaliadores.js";
 import { CicloDetectado } from "../src/helper/dependencias.js";
@@ -62,7 +62,11 @@ const AMOSTRA = [
 ];
 
 describe("teste dourado do MCC", () => {
-  const resultados = calcular(INDICADORES, AMOSTRA, PERGUNTAS);
+  // Em beforeAll, não no corpo do describe: se calcular lançar, só estes testes caem.
+  let resultados: ReturnType<typeof calcular>;
+  beforeAll(() => {
+    resultados = calcular(INDICADORES, AMOSTRA, PERGUNTAS);
+  });
 
   it("a média do MCC bate com a conta feita no papel", () => {
     expect(resultados.get("mcc")).toEqual({ status: "OK", valor: 66.67 });
@@ -303,7 +307,10 @@ describe("recorte ANTES/APÓS", () => {
       tipo: "CLASSIFICACAO",
       config: { indicadorId: "idtc", faixas: [{ rotulo: "Baixo", de: 0, ate: 50 }, { rotulo: "Alto", de: 50, ate: 100 }] },
     });
-    const r = calcular([vcrasPar, cvacSemPar, cpuer, mccSemRecorte, idtc, faixasIdtc], RESP_PAR, PERG_PAR);
+    let r: ReturnType<typeof calcular>;
+    beforeAll(() => {
+      r = calcular([vcrasPar, cvacSemPar, cpuer, mccSemRecorte, idtc, faixasIdtc], RESP_PAR, PERG_PAR);
+    });
 
     it("composto sem recorte sai pareado, cada lado com o lado correspondente da dependência", () => {
       expect(r.get("mcc")).toEqual({ antes: { status: "OK", valor: 38.46 }, apos: { status: "OK", valor: 61.54 } });
