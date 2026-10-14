@@ -1,7 +1,35 @@
 @import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@700;800&family=Inter:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap');
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'tailwindcss';
+
+/* Mesmo seletor do `darkMode: ["class", '[data-theme="escuro"]']` da v3: o
+   ThemeModeContext grava data-theme="escuro" no <html>. */
+@custom-variant dark (&:is([data-theme="escuro"] *));
+
+/*
+  Na v4 a cor padrão da borda passou a ser `currentcolor`. Esta regra mantém o
+  cinza-200 da v3 para não mudar nenhuma borda que dependa do padrão.
+*/
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentcolor);
+  }
+
+  /* A v4 tirou o cursor de mãozinha dos botões e mudou a cor do placeholder;
+     as duas regras abaixo repõem o preflight da v3. */
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: #9ca3af;
+  }
+}
 
 :root {
   color-scheme: light dark;

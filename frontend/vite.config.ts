@@ -1,8 +1,9 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
   // Não observar public/: evita crash EBUSY do watcher com arquivos travados
   // pelo OneDrive (a pasta public é servida estaticamente, não precisa de HMR).
   server: { port: 5173, watch: { ignored: ["**/public/**"] } },
