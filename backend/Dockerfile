@@ -19,7 +19,14 @@ COPY tsconfig.json ./
 COPY src ./src
 RUN npm run build
 
-# Descarta as dependências de desenvolvimento antes de levar para a imagem final.
+# Dados de referência lidos pelo seed (municípios). Ficam só nesta etapa: a
+# imagem final não roda seed.
+COPY data ./data
+
+# ── Etapa 1b: dependências de produção ───────────────────────────────────────
+# O prune fica numa etapa própria: a etapa `build` mantém o tsx, que o serviço
+# `seed` do compose usa (o seed é TypeScript).
+FROM build AS prod-deps
 RUN npm prune --omit=dev
 
 # ── Etapa 2: execução ─────────────────────────────────────────────────────────
@@ -31,7 +38,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends openssl \
 ENV NODE_ENV=production
 WORKDIR /app
 
-COPY --from=build /app/node_modules ./node_modules
+COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/prisma ./prisma
 COPY package.json ./
