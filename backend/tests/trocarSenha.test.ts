@@ -1,17 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import request from "supertest";
 
+vi.mock("../src/models/sessaoModel.js", async () => (await import("./helpers/sessao.js")).moduloSessaoFalso);
 vi.mock("../src/models/usuarioModel.js");
 vi.mock("../src/helper/auditoria.js");
 
 import { createApp } from "../src/app.js";
 import { usuarioModel } from "../src/models/usuarioModel.js";
 import { registrarLog } from "../src/helper/auditoria.js";
-import { gerarToken } from "../src/helper/token.js";
+import { tokenDe } from "./helpers/sessao.js";
 import { hashSenha } from "../src/helper/senha.js";
 
 const app = createApp();
-const token = gerarToken({ sub: "u1", papel: "COLETADOR" });
+// Conta com senha provisória: a troca tem de passar mesmo assim.
+const token = tokenDe("u1", "COLETADOR", { precisaTrocarSenha: true });
 
 const SENHA_ATUAL = "provisoria da secria 1";
 const SENHA_NOVA = "gato azul no telhado 7";

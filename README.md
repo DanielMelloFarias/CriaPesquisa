@@ -213,7 +213,9 @@ Este sistema lida com dados de beneficiários (LGPD). Cuidados adotados no repos
 - `JWT_SECRET` é obrigatório em produção (sem fallback previsível).
 - As alterações são registradas em log de auditoria, com exclusão lógica (soft-delete).
 - O login tem limite de 10 tentativas malsucedidas por IP a cada 15 minutos (login correto não conta).
-- Senha só pode ser trocada pela própria pessoa; conta com senha definida por terceiro fica travada até a troca.
+- Senha só pode ser trocada pela própria pessoa.
+- Conta com senha provisória (definida pelo seed ou por um admin) é travada **na API**, não só na tela: até a troca, qualquer rota além de `GET /api/auth/me` e `PUT /api/auth/senha` responde `403 SENHA_PROVISORIA`.
+- Usuário desativado ou removido perde o acesso **na hora**: o token é conferido contra o banco a cada requisição, sem esperar expirar — e o papel vale o que está no banco, não o que estava no token.
 - `/api/health` consulta o banco: a API não se declara saudável se não consegue ler dados.
 - `SIGTERM` encerra com calma — as requisições em andamento terminam antes do processo sair.
 - As listagens têm teto de 200 itens por página: ninguém leva a base inteira numa requisição só.

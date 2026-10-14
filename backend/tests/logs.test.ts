@@ -1,15 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import request from "supertest";
 
+vi.mock("../src/models/sessaoModel.js", async () => (await import("./helpers/sessao.js")).moduloSessaoFalso);
 vi.mock("../src/models/logModel.js");
 
 import { createApp } from "../src/app.js";
-import { gerarToken } from "../src/helper/token.js";
+import { tokenDe } from "./helpers/sessao.js";
 import { logModel } from "../src/models/logModel.js";
 
 const app = createApp();
-const tokenAdmin = gerarToken({ sub: "a1", papel: "ADMIN" });
-const tokenGestor = gerarToken({ sub: "g1", papel: "GESTOR" });
+const tokenAdmin = tokenDe("a1", "ADMIN");
+const tokenGestor = tokenDe("g1", "GESTOR");
 
 beforeEach(() => {
   vi.clearAllMocks();
