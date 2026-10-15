@@ -48,6 +48,9 @@ const TIPOS_SEM_VALOR_INDIVIDUAL: ReadonlySet<TipoIndicador> = new Set([
   "ATALAH",
 ]);
 
+/** Tipos que podem fornecer o IMC (kg/m²) de PERCENTIL_OMS e ATALAH. */
+const TIPOS_IMC: ReadonlySet<TipoIndicador> = new Set(["MEDIA", "DERIVADA"]);
+
 /** Troca as perguntas do recorte, para avaliar o mesmo indicador no outro cenário. */
 function aplicarSubstituicoes(config: ConfigIndicador, substituicoes: Substituicoes): ConfigIndicador {
   const mapa = new Map(substituicoes.map((s) => [s.de, s.para]));
@@ -119,6 +122,8 @@ function agregarPorTipo(
         const imc = imcs[i];
         const semana = r.itens.get(config.semanaPerguntaId)?.valorNumero;
         if (imc === null || imc === undefined || typeof semana !== "number") return null;
+        // IMC ≤ 0 ou não finito não é medida: sem isto cairia em "Baixo peso".
+        if (!Number.isFinite(imc) || imc <= 0) return null;
         const faixa = classificarAtalah(imc, semana);
         return faixa === null ? null : FAIXAS_ATALAH.indexOf(faixa) + 0.5;
       });
@@ -246,12 +251,14 @@ export function calcular(
       }
     }
 
-    // 5d. PERCENTIL_OMS e ATALAH comparam o IMC com tabelas em kg/m². Um z-score no
-    //     lugar do IMC daria número plausível e errado.
+    // 5d. PERCENTIL_OMS e ATALAH comparam o IMC com tabelas em kg/m². IMC é pergunta
+    //     numérica (MEDIA) ou peso÷altura² (DERIVADA); qualquer outro tipo (z-score,
+    //     0–100, …) daria número plausível e errado.
     if (config.tipo === "PERCENTIL_OMS" || config.tipo === "ATALAH") {
       const dep = config.imcIndicadorId;
-      if (porId.get(dep)!.tipo === "ZSCORE") {
-        marcarIncompleto(id, `depende de ${dep}, que é um z-score, não um IMC`, id, dep);
+      const tipo = porId.get(dep)!.tipo;
+      if (!TIPOS_IMC.has(tipo)) {
+        marcarIncompleto(id, `depende de ${dep}, do tipo ${tipo}, que não é um IMC`, id, dep);
         continue;
       }
     }

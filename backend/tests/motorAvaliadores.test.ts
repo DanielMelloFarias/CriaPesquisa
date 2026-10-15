@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { montarResposta, avaliar, opcaoSemNota, ItemDuplicado } from "../src/helper/motor/avaliadores.js";
 import { validarConfig } from "../src/helper/indicadorConfig.js";
+import { lmsImcParaIdade } from "../src/helper/motor/referencias/oms.js";
 
 const vazio = new Map<string, number | null>();
 
@@ -269,5 +270,10 @@ describe("PERCENTIL_OMS", () => {
     // Fim da tabela (0–1856 d): nascido em 2020-12-01, no dia local 31/12/2025 tem 1856 dias
     // (dentro); no dia UTC 01/01/2026 teria 1857 (fora → null).
     expect(avaliar(cfg({ acimaDe: 85 }), r("Masculino", "2020-12-01", noite), imc(30))).toBe(100);
+    // Fixa a fronteira: o dia 1856 existe e o 1857 não — senão o caso acima não provaria nada.
+    expect(lmsImcParaIdade("masculino", 1856)).not.toBeNull();
+    expect(lmsImcParaIdade("masculino", 1857)).toBeNull();
+    // Ao meio-dia de 01/01/2026 (dia local = dia UTC = 1857) ele já está fora da tabela.
+    expect(avaliar(cfg({ acimaDe: 85 }), r("Masculino", "2020-12-01"), imc(30))).toBeNull();
   });
 });

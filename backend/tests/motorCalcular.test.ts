@@ -765,6 +765,46 @@ describe("ATALAH", () => {
     });
   });
 
+  it("IMC zero ou negativo não conta (não vira Baixo peso)", () => {
+    const res = calcular(inds, [g("a", 32.0, 20), g("b", 0, 20), g("c", -5, 20)], P);
+    expect(res.get("atalah")).toEqual({
+      status: "OK_FAIXAS",
+      faixas: [
+        { rotulo: "Baixo peso", percentual: 0 },
+        { rotulo: "Adequado", percentual: 0 },
+        { rotulo: "Sobrepeso", percentual: 0 },
+        { rotulo: "Obesidade", percentual: 100 },
+      ],
+    });
+  });
+
+  it("IMC pareado: o APÓS usa o IMC do APÓS", () => {
+    const PP = new Set(["imcAtual", "imcDepois", "semana"]);
+    const imcPareado = ind({
+      id: "imc",
+      tipo: "MEDIA",
+      config: { perguntaId: "imcAtual" },
+      recorte: "ANTES_APOS",
+      recorteConfig: { substituicoes: [{ de: "imcAtual", para: "imcDepois" }] },
+    });
+    // Semana 20: ANTES 21,0 → Baixo peso (≤ 21,5); APÓS 32,0 → Obesidade (≥ 31,1).
+    const resp = montarResposta("a", [
+      { perguntaId: "imcAtual", valorNumero: 21 },
+      { perguntaId: "imcDepois", valorNumero: 32 },
+      { perguntaId: "semana", valorNumero: 20 },
+    ]);
+    const faixas = (baixo: number, obes: number) => ({
+      status: "OK_FAIXAS",
+      faixas: [
+        { rotulo: "Baixo peso", percentual: baixo },
+        { rotulo: "Adequado", percentual: 0 },
+        { rotulo: "Sobrepeso", percentual: 0 },
+        { rotulo: "Obesidade", percentual: obes },
+      ],
+    });
+    expect(calcular([imcPareado, inds[1]], [resp], PP).get("atalah")).toEqual({ antes: faixas(100, 0), apos: faixas(0, 100) });
+  });
+
   it("ninguém com semana = SEM_DADOS", () => {
     expect(calcular(inds, [g("a", 22)], P).get("atalah")).toEqual({ status: "SEM_DADOS" });
   });
@@ -853,7 +893,67 @@ describe("PERCENTIL_OMS no calcular", () => {
     const z = ind({ id: "z", tipo: "ZSCORE", config: { componentes: [{ indicadorId: "imc", peso: 1 }] } });
     const at = ind({ id: "at", tipo: "ATALAH", config: { imcIndicadorId: "z", semanaPerguntaId: "nasc" } });
     const res = calcular([imc, z, percentil("z"), at], [crianca("a", 19.9), crianca("b", 16.7992)], P);
-    expect(res.get("p85")).toEqual({ status: "INCOMPLETO", motivo: "depende de z, que é um z-score, não um IMC", dependencia: "z" });
-    expect(res.get("at")).toEqual({ status: "INCOMPLETO", motivo: "depende de z, que é um z-score, não um IMC", dependencia: "z" });
+    const esperado = { status: "INCOMPLETO", motivo: "depende de z, do tipo ZSCORE, que não é um IMC", dependencia: "z" };
+    expect(res.get("p85")).toEqual(esperado);
+    expect(res.get("at")).toEqual(esperado);
+  });
+
+  it("IMC vindo de uma PROPORCAO (0–100) = INCOMPLETO", () => {
+    const prop = ind({ id: "pr", tipo: "PROPORCAO", config: { perguntaId: "sexo", opcoesNumerador: ["Masculino"] } });
+    const at = ind({ id: "at", tipo: "ATALAH", config: { imcIndicadorId: "pr", semanaPerguntaId: "nasc" } });
+    const res = calcular([prop, percentil("pr"), at], [crianca("a", 19.9)], P);
+    const esperado = { status: "INCOMPLETO", motivo: "depende de pr, do tipo PROPORCAO, que não é um IMC", dependencia: "pr" };
+    expect(res.get("p85")).toEqual(esperado);
+    expect(res.get("at")).toEqual(esperado);
+  });
+
+  it("IMC vindo de DERIVADA (peso ÷ altura²) é aceito", () => {
+    const PD = new Set([...P, "peso", "altura"]);
+    const der = ind({
+      id: "imcD",
+      tipo: "DERIVADA",
+      config: {
+        variaveis: { p: "peso", a: "altura" },
+        expressao: { op: "/", esq: { var: "p" }, dir: { op: "*", esq: { var: "a" }, dir: { var: "a" } } },
+      },
+    });
+    // 19,9 kg/m² = 19,9 kg ÷ 1 m²: acima do +2 DP aos 365 dias.
+    const resp = montarResposta(
+      "a",
+      [
+        { perguntaId: "peso", valorNumero: 19.9 },
+        { perguntaId: "altura", valorNumero: 1 },
+        { perguntaId: "nasc", valorData: new Date("2025-01-01") },
+        { perguntaId: "sexo", opcoesSelecionadas: ["Masculino"] },
+      ],
+      null,
+      { enviadaEm: new Date("2026-01-01T12:00:00Z") },
+    );
+    expect(calcular([der, percentil("imcD")], [resp], PD).get("p85")).toEqual({ status: "OK", valor: 100 });
+  });
+
+  it("IMC pareado: o APÓS do percentil usa o IMC do APÓS", () => {
+    const PP = new Set([...P, "imcDepois"]);
+    const imcPareado = {
+      ...imc,
+      recorte: "ANTES_APOS" as const,
+      recorteConfig: { substituicoes: [{ de: "imcCrianca", para: "imcDepois" }] },
+    };
+    // ANTES 16,7992 (mediana, não passa do P85); APÓS 19,9 (> +2 DP, passa).
+    const resp = montarResposta(
+      "a",
+      [
+        { perguntaId: "imcCrianca", valorNumero: 16.7992 },
+        { perguntaId: "imcDepois", valorNumero: 19.9 },
+        { perguntaId: "nasc", valorData: new Date("2025-01-01") },
+        { perguntaId: "sexo", opcoesSelecionadas: ["Masculino"] },
+      ],
+      null,
+      { enviadaEm: new Date("2026-01-01T12:00:00Z") },
+    );
+    expect(calcular([imcPareado, percentil("imc")], [resp], PP).get("p85")).toEqual({
+      antes: { status: "OK", valor: 0 },
+      apos: { status: "OK", valor: 100 },
+    });
   });
 });
