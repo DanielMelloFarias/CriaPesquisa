@@ -57,6 +57,11 @@ enum TipoIndicador {
   CLASSIFICACAO
   CONTAGEM
   DISTRIBUICAO
+  ESCALA
+  META_POR_IDADE
+  ZSCORE
+  PERCENTIL_OMS
+  ATALAH
 }
 
 enum StatusIndicador {

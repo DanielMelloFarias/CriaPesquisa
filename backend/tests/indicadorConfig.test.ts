@@ -271,3 +271,73 @@ describe("rigor estrutural", () => {
     ).toThrow();
   });
 });
+
+describe("tipos novos", () => {
+  it("ESCALA: aceita notas 0–100 e null; recusa nota fora da faixa ou não finita", () => {
+    expect(() => validarConfig("ESCALA", { perguntaId: "p", notas: { "Antes": 100, "Após": 50, "Não soube": null } })).not.toThrow();
+    expect(() => validarConfig("ESCALA", { perguntaId: "p", notas: { "A": 101 } })).toThrow();
+    expect(() => validarConfig("ESCALA", { perguntaId: "p", notas: { "A": -1 } })).toThrow();
+    expect(() => validarConfig("ESCALA", { perguntaId: "p", notas: { "A": Infinity } })).toThrow();
+    expect(() => validarConfig("ESCALA", { perguntaId: "p", notas: {} })).toThrow();
+  });
+
+  it("META_POR_IDADE: faixas em ordem, sem sobreposição, última pode ser aberta", () => {
+    const base = { perguntaId: "n", nascimentoPerguntaId: "d" };
+    expect(() => validarConfig("META_POR_IDADE", { ...base, faixas: [
+      { deMeses: 0, ateMeses: 12, esperado: 7 }, { deMeses: 12, ateMeses: 24, esperado: 2 }, { deMeses: 24, ateMeses: null, esperado: 1 },
+    ] })).not.toThrow();
+    // sobreposição
+    expect(() => validarConfig("META_POR_IDADE", { ...base, faixas: [
+      { deMeses: 0, ateMeses: 13, esperado: 7 }, { deMeses: 12, ateMeses: 24, esperado: 2 },
+    ] })).toThrow();
+    // faixa aberta no meio
+    expect(() => validarConfig("META_POR_IDADE", { ...base, faixas: [
+      { deMeses: 0, ateMeses: null, esperado: 7 }, { deMeses: 12, ateMeses: 24, esperado: 2 },
+    ] })).toThrow();
+    // esperado zero
+    expect(() => validarConfig("META_POR_IDADE", { ...base, faixas: [{ deMeses: 0, ateMeses: 12, esperado: 0 }] })).toThrow();
+    // de >= ate
+    expect(() => validarConfig("META_POR_IDADE", { ...base, faixas: [{ deMeses: 12, ateMeses: 12, esperado: 1 }] })).toThrow();
+  });
+
+  it("ZSCORE: ao menos um componente, peso > 0", () => {
+    expect(() => validarConfig("ZSCORE", { componentes: [{ indicadorId: "a", peso: 1 }] })).not.toThrow();
+    expect(() => validarConfig("ZSCORE", { componentes: [] })).toThrow();
+    expect(() => validarConfig("ZSCORE", { componentes: [{ indicadorId: "a", peso: 0 }] })).toThrow();
+  });
+
+  it("PERCENTIL_OMS: corte entre 1 e 99, um só lado", () => {
+    const base = { imcIndicadorId: "imc", nascimentoPerguntaId: "d", sexoPerguntaId: "s", opcoesSexo: { masculino: "Masculino", feminino: "Feminino" } };
+    expect(() => validarConfig("PERCENTIL_OMS", { ...base, corte: { abaixoDe: 10 } })).not.toThrow();
+    expect(() => validarConfig("PERCENTIL_OMS", { ...base, corte: { acimaDe: 85 } })).not.toThrow();
+    expect(() => validarConfig("PERCENTIL_OMS", { ...base, corte: { abaixoDe: 0 } })).toThrow();
+    expect(() => validarConfig("PERCENTIL_OMS", { ...base, corte: { acimaDe: 100 } })).toThrow();
+    expect(() => validarConfig("PERCENTIL_OMS", { ...base, corte: { abaixoDe: 10, acimaDe: 85 } })).toThrow();
+    expect(() => validarConfig("PERCENTIL_OMS", { ...base, opcoesSexo: { masculino: "X", feminino: "X" }, corte: { abaixoDe: 10 } })).toThrow();
+  });
+
+  it("ATALAH: precisa do IMC e da pergunta de semana", () => {
+    expect(() => validarConfig("ATALAH", { imcIndicadorId: "imc", semanaPerguntaId: "sem" })).not.toThrow();
+    expect(() => validarConfig("ATALAH", { imcIndicadorId: "imc" })).toThrow();
+  });
+
+  it("referências cobrem os campos novos", () => {
+    expect(perguntasReferenciadas(validarConfig("ESCALA", { perguntaId: "p", notas: { A: 1 } }))).toEqual(["p"]);
+    expect(perguntasReferenciadas(validarConfig("META_POR_IDADE", { perguntaId: "n", nascimentoPerguntaId: "d",
+      faixas: [{ deMeses: 0, ateMeses: null, esperado: 1 }] }))).toEqual(["n", "d"]);
+    const oms = validarConfig("PERCENTIL_OMS", { imcIndicadorId: "imc", nascimentoPerguntaId: "d", sexoPerguntaId: "s",
+      opcoesSexo: { masculino: "M", feminino: "F" }, corte: { abaixoDe: 10 } });
+    expect(perguntasReferenciadas(oms)).toEqual(["d", "s"]);
+    expect(indicadoresReferenciados(oms)).toEqual(["imc"]);
+    const atalah = validarConfig("ATALAH", { imcIndicadorId: "imc", semanaPerguntaId: "sem" });
+    expect(perguntasReferenciadas(atalah)).toEqual(["sem"]);
+    expect(indicadoresReferenciados(atalah)).toEqual(["imc"]);
+    expect(indicadoresReferenciados(validarConfig("ZSCORE", { componentes: [{ indicadorId: "a", peso: 1 }, { indicadorId: "b", peso: 1 }] })))
+      .toEqual(["a", "b"]);
+  });
+
+  it("tipos novos recusam chave desconhecida (.strict)", () => {
+    expect(() => validarConfig("ESCALA", { perguntaId: "p", notas: { A: 1 }, extra: 1 })).toThrow();
+    expect(() => validarConfig("ATALAH", { imcIndicadorId: "imc", semanaPerguntaId: "s", extra: 1 })).toThrow();
+  });
+});
