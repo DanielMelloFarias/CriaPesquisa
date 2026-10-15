@@ -117,9 +117,16 @@ const LinkRevisar = styled(Link)`
 
 const pct = (v: number) => `${v.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
 
+/** Sequência categórica sem semântica de status (nada de verde/vermelho), distinta nos dois temas. */
+export function coresFaixas(modo: "claro" | "escuro"): string[] {
+  return modo === "escuro"
+    ? ["#3A8EF0", "#A78BFA", "#22D3EE", "#E879F9", "#94A3B8"]
+    : ["#1756B8", "#7C3AED", "#0891B2", "#C026D3", "#64748B"];
+}
+
 function Faixas({ faixas }: { faixas: Array<{ rotulo: string; percentual: number }> }) {
   const t = useTheme();
-  const CORES = [t.cores.primaryDark, t.cores.accent, t.cores.warn, t.cores.success, t.cores.danger];
+  const CORES = coresFaixas(t.modo);
   return (
     <>
       <Barra>
@@ -216,7 +223,7 @@ export function CartaoIndicador({
             <Corpo exibicao={modelo.antes} podeRevisar={podeRevisar} id={indicador.id} />
           </div>
           {modelo.diferenca !== undefined && (
-            <Tag $tone="blue" data-testid="diferenca" aria-label="Diferença entre antes e após">
+            <Tag $tone="blue" role="status" data-testid="diferenca" aria-label="Diferença entre antes e após">
               {modelo.diferenca}
             </Tag>
           )}

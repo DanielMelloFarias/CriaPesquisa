@@ -214,12 +214,16 @@ export function DonutInterativo({
   const estiloCard = full ? { gridColumn: "1 / -1" } : undefined;
 
   if (!labels.length || total === 0) {
+    const vazio = (
+      <div style={{ height: h, display: "grid", placeItems: "center" }}>
+        <Muted style={{ fontSize: 12.5 }}>Sem dados suficientes ainda.</Muted>
+      </div>
+    );
+    if (semCard) return vazio;
     return (
       <Card style={estiloCard}>
         <SectionTitle style={{ margin: 0 }}>{titulo}</SectionTitle>
-        <div style={{ height: h, display: "grid", placeItems: "center" }}>
-          <Muted style={{ fontSize: 12.5 }}>Sem dados suficientes ainda.</Muted>
-        </div>
+        {vazio}
       </Card>
     );
   }

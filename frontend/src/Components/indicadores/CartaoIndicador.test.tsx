@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { ThemeModeProvider } from "../../App/theme/ThemeModeContext.js";
-import { CartaoIndicador } from "./CartaoIndicador.js";
+import { CartaoIndicador, coresFaixas } from "./CartaoIndicador.js";
 import type { Indicador } from "../../App/api/indicadores.js";
 import type { ResultadoComRecorte } from "../../App/lib/resultadoIndicador.js";
 
@@ -117,5 +117,12 @@ describe("CartaoIndicador", () => {
   it("tooltip do objetivo no ícone de informação", () => {
     renderCartao(indicador({ objetivo: "Medir a cobertura" }), { status: "SEM_DADOS" });
     expect(screen.getByTitle("Medir a cobertura")).toBeInTheDocument();
+  });
+
+  it("as 4 primeiras cores de faixa são distintas em cada tema", () => {
+    for (const modo of ["claro", "escuro"] as const) {
+      const cores = coresFaixas(modo).slice(0, 4);
+      expect(new Set(cores).size).toBe(4);
+    }
   });
 });
