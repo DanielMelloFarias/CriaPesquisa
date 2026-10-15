@@ -1,5 +1,5 @@
 import { prisma } from "../config/prisma.js";
-import type { Prisma, StatusIndicador } from "@prisma/client";
+import { Prisma, type StatusIndicador } from "@prisma/client";
 import type { CriarIndicadorInput, AtualizarIndicadorInput } from "../helper/validators.js";
 import type { PerguntaParaConferir } from "../helper/indicadorPerguntas.js";
 
@@ -127,7 +127,9 @@ export const indicadorModel = {
           // Saiu de DEFINICAO_INCOMPLETA: o motivo antigo não descreve mais nada.
           ...(dados.status &&dados.status !== "DEFINICAO_INCOMPLETA" ? { motivoIncompleto: null } : {}),
           config: dados.config as Prisma.InputJsonValue,
-          recorteConfig: dados.recorteConfig as Prisma.InputJsonValue | undefined,
+          // `null` na edição limpa o recorte: coluna Json? precisa de DbNull, não de null.
+          recorteConfig:
+            dados.recorteConfig === null ? Prisma.DbNull : (dados.recorteConfig as Prisma.InputJsonValue | undefined),
           updatedById: usuarioId,
           dependeDe: { create: dependencias.map((dependeDeId) => ({ dependeDeId })) },
         },

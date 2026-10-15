@@ -216,7 +216,14 @@ export const criarIndicadorSchema = indicadorBaseSchema.superRefine(regrasDoIndi
 export type CriarIndicadorInput = z.infer<typeof criarIndicadorSchema>;
 
 // Sem as regras entre campos: só dá para conferi-las com o registro gravado em mãos.
-export const atualizarIndicadorSchema = indicadorBaseSchema.partial();
+// Na edição, `null` limpa recorte, recorteConfig e meta (ausente = não mexer).
+export const atualizarIndicadorSchema = indicadorBaseSchema
+  .extend({
+    recorte: indicadorBaseSchema.shape.recorte.unwrap().nullable(),
+    recorteConfig: indicadorBaseSchema.shape.recorteConfig.unwrap().nullable(),
+    meta: z.number().nullable(),
+  })
+  .partial();
 export type AtualizarIndicadorInput = z.infer<typeof atualizarIndicadorSchema>;
 
 /** As mesmas regras de `criarIndicadorSchema`, sobre o registro já mesclado (gravado + corpo). */

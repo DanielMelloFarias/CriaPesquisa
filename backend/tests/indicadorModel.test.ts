@@ -12,6 +12,7 @@ vi.mock("../src/config/prisma.js", () => ({
   },
 }));
 
+import { Prisma } from "@prisma/client";
 import { prisma } from "../src/config/prisma.js";
 import { indicadorModel } from "../src/models/indicadorModel.js";
 import type { CriarIndicadorInput } from "../src/helper/validators.js";
@@ -88,6 +89,18 @@ describe("indicadorModel.atualizar", () => {
   it("promover para ATIVO limpa o motivo", async () => {
     await indicadorModel.atualizar("i1", { status: "ATIVO" }, "u1", []);
     expect(dadosAtualizados()).toMatchObject({ status: "ATIVO", motivoIncompleto: null });
+  });
+
+  it("recorteConfig null vira DbNull e recorte/meta null limpam a coluna", async () => {
+    await indicadorModel.atualizar("i1", { recorte: null, recorteConfig: null, meta: null }, "u1", []);
+    expect(dadosAtualizados()).toMatchObject({ recorte: null, meta: null });
+    // toBe: o matcher de objeto trata a instância vazia de DbNull como igual a null.
+    expect(dadosAtualizados().recorteConfig).toBe(Prisma.DbNull);
+  });
+
+  it("sem recorteConfig no corpo não mexe na coluna", async () => {
+    await indicadorModel.atualizar("i1", { nome: "Novo" }, "u1", []);
+    expect(dadosAtualizados().recorteConfig).toBeUndefined();
   });
 
   it("sem status no corpo não mexe no motivo", async () => {

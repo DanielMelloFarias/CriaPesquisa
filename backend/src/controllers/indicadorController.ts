@@ -153,27 +153,49 @@ export async function atualizar(req: Request, res: Response) {
 
   const dados = { ...(req.body as AtualizarIndicadorInput) };
 
+  // Valor que vai ficar gravado: ausente no corpo = mantém o gravado; `null` = limpa.
+  const final = <K extends "recorte" | "recorteConfig">(campo: K) =>
+    (dados[campo] !== undefined ? dados[campo] : atual[campo]) ?? undefined;
+
   // As regras entre campos valem sobre o que vai ficar gravado, não só sobre o corpo:
   // quem manda só o status (ou só o recorte) aproveita o motivo (ou a config) já gravado.
   const statusFinal = dados.status ?? atual.status;
   regrasIndicadorMescladoSchema.parse({
     status: statusFinal,
     motivoIncompleto: dados.motivoIncompleto ?? atual.motivoIncompleto ?? undefined,
-    recorte: dados.recorte ?? atual.recorte ?? undefined,
-    recorteConfig: dados.recorteConfig ?? atual.recorteConfig ?? undefined,
+    recorte: final("recorte"),
+    recorteConfig: final("recorteConfig"),
   });
   // Motivo só descreve DEFINICAO_INCOMPLETA: fora dela, não grava sobra do corpo.
   if (statusFinal !== "DEFINICAO_INCOMPLETA") delete dados.motivoIncompleto;
 
   const tipo = dados.tipo ?? (atual.tipo as CriarIndicadorInput["tipo"]);
-  const dependencias = conferirConfig(tipo, dados.config ?? atual.config);
-  await conferirReferencias(dependencias, dados.pesquisaId);
-  // Só quando tipo/config/recorte mudam: indicador cuja pergunta ganhou opção continua
-  // editável (o motor marca INCOMPLETO). Confere o registro mesclado (gravado + corpo).
-  if (dados.tipo !== undefined || dados.config !== undefined || dados.recorteConfig !== undefined) {
-    await conferirPerguntas(tipo, dados.config ?? atual.config, dados.recorteConfig ?? atual.recorteConfig);
+  const configFinal = dados.config ?? atual.config;
+  let dependencias: string[];
+  if (statusFinal === "ATIVO") {
+    // Só o indicador ativo entra no cálculo: aqui a config precisa estar completa.
+    dependencias = conferirConfig(tipo, configFinal);
+    await conferirReferencias(dependencias, dados.pesquisaId);
+    // Só quando tipo/config/recorte mudam (ou na ativação): indicador ativo cuja pergunta
+    // ganhou opção continua editável (o motor marca INCOMPLETO). Confere o registro mesclado.
+    const ativando = atual.status !== "ATIVO";
+    if (ativando || dados.tipo !== undefined || dados.config !== undefined || dados.recorteConfig !== undefined) {
+      await conferirPerguntas(tipo, configFinal, final("recorteConfig"));
+    }
+    await conferirCiclo(id, dependencias);
+  } else {
+    // Rascunho ou inativo: grava a config pela metade (a revisão continua depois).
+    // Config que não valida não tem dependência; a que valida segue o caminho normal.
+    let valida: string[] | null = null;
+    try {
+      valida = conferirConfig(tipo, configFinal);
+    } catch (erro) {
+      if (!(erro instanceof z.ZodError)) throw erro;
+    }
+    dependencias = valida ?? [];
+    await conferirReferencias(dependencias, dados.pesquisaId);
+    if (valida) await conferirCiclo(id, dependencias);
   }
-  await conferirCiclo(id, dependencias);
 
   const indicador = await indicadorModel.atualizar(id, dados, usuario.id, dependencias).catch(traduzirErroDeGravacao);
   invalidarCache();
