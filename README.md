@@ -161,96 +161,150 @@ banco não protege contra perda da máquina.
 
 ## Deploy
 
-**Antes de subir esta versão num banco que já existe:** ela remove a coluna antiga
-`Indicador.origemPlanilha`. Confira que está vazia (precisa imprimir `0`; se a tabela ou a
-coluna ainda não existem, é o primeiro deploy: pule):
+Roteiro para a VM da SECRIA, a partir do código no GitHub. Em todos os comandos abaixo,
+`C` é um atalho:
 
 ```bash
-docker compose -f docker-compose.prod.yml --env-file .env.prod exec -T postgres psql -U cria_user -d criapesquisa -tAc 'SELECT count(*) FROM "Indicador" WHERE "origemPlanilha" IS NOT NULL'
+C="docker compose -f docker-compose.prod.yml --env-file .env.prod"
 ```
+
+Sobem quatro serviços: `postgres`, `migracao` (aplica as migrations e sai), `api` e `web`
+(nginx servindo o front e encaminhando `/api`). A API só inicia depois que a migração termina
+bem. O Postgres **não expõe porta no host** (acesso administrativo só por túnel), e o TLS
+**termina num proxy à frente do `web`** — não sirva o sistema em HTTP na internet.
+`TRUST_PROXY=1` já vem no compose: é o que faz o limite de tentativas de login enxergar o IP
+real de quem chama.
+
+### Primeira instalação
+
+1. **Pré-requisitos na VM:** Docker com o plugin `compose`, `git`, e o domínio já apontando
+   para o proxy com HTTPS que vai encaminhar para a porta do `web` (`WEB_PORT`, padrão 8080).
+
+2. **Código:**
+
+   ```bash
+   git clone https://github.com/mraphaely/CriaPesquisa.git /opt/criapesquisa
+   cd /opt/criapesquisa
+   ```
+
+3. **Configuração:** `cp .env.prod.example .env.prod` e preencha (cada variável está
+   comentada no arquivo). Gere os segredos assim:
+
+   ```bash
+   openssl rand -hex 24      # POSTGRES_PASSWORD (hex: não precisa de escape dentro da DATABASE_URL)
+   openssl rand -base64 48   # JWT_SECRET
+   ```
+
+   - `DATABASE_URL` usa a mesma senha do `POSTGRES_PASSWORD` e o host `postgres`.
+   - `CORS_ORIGIN` = o endereço público do sistema (`https://…`, sem barra no final).
+   - `SEED_PASSWORD` = senha inicial das contas-base. Precisa atender à política de senha
+     (o seed recusa senha fraca em produção). Combine com a coordenação como ela vai ser
+     entregue — ela abre as quatro contas-base até a primeira troca.
+   - `.env.prod` nunca vai para o Git (já está no `.gitignore`).
+
+4. **Subir:**
+
+   ```bash
+   $C up -d --build
+   $C ps                                   # api e web "healthy"; migracao "exited (0)"
+   curl -s http://localhost:8080/api/health   # {"status":"ok", ... "banco":"ok"}
+   ```
+
+5. **Seed (uma vez):** contas-base, municípios e as pesquisas do Cartão CRIA.
+
+   ```bash
+   $C --profile seed run --rm seed
+   ```
+
+   Saída esperada: `Seed concluído.`
+
+6. **Pergunta "Semana gestacional atual"** (idempotente):
+
+   ```bash
+   $C --profile seed run --rm seed npx tsx scripts/adicionar-semana-gestacional.ts
+   ```
+
+   Numa instalação nova a saída é `já existia: <id>` — o seed já cria a pergunta. Em banco
+   antigo é `pergunta criada: <id>`. **Saída vazia significa que o script não rodou**: pare e
+   reporte.
+
+7. **Importar os indicadores da planilha** (uma vez):
+   1. A coordenação entrega a planilha "Exportação Indicadores" em `.xlsx`, por canal privado,
+      com o conteúdo das colunas "DtRegistro" e "Usuario" apagado (os títulos ficam — o
+      importador confere o cabeçalho). Copie para a VM em `/tmp/indicadores.xlsx`.
+      **Nunca** coloque o arquivo dentro do repositório (o `.gitignore` bloqueia `*.xlsx`).
+   2. Confirme que o arquivo existe: `ls -l /tmp/indicadores.xlsx`. **Se não existir, pare**
+      (com o arquivo ausente o docker cria um diretório vazio nesse caminho).
+   3. Rode:
+
+      ```bash
+      $C --profile seed run --rm -v /tmp/indicadores.xlsx:/tmp/indicadores.xlsx:ro \
+        seed npx tsx scripts/importar-indicadores.ts /tmp/indicadores.xlsx
+      ```
+
+   4. A primeira linha da saída deve ser
+      `110 lidas · 23 importadas pelo mapa · 79 por sugestão · 0 já existiam · 18 auxiliares`.
+      Saída vazia = o script não rodou. Rodar de novo é seguro: o que já foi importado (e
+      revisado) não é tocado.
+   5. Apague o arquivo: `rm /tmp/indicadores.xlsx`.
+
+8. **Ativar os indicadores com definição pronta** (idempotente; passa pela mesma validação e
+   auditoria da tela de revisão):
+
+   ```bash
+   $C --profile seed run --rm seed npx tsx scripts/ativar-indicadores-prontos.ts
+   ```
+
+   Saída esperada: `34 ativados · 0 recusados`. Se algum for recusado, a saída diz qual e por
+   quê; ele continua "para revisar" na tela Indicadores. Os demais indicadores importados
+   ficam para a revisão da coordenação na tela **Indicadores** (menu Administração).
+
+9. **Reinicie a API** (o cache dos indicadores vive no processo dela e não enxerga o que os
+   scripts gravaram):
+
+   ```bash
+   $C restart api
+   ```
+
+10. **Primeiro acesso:** entre com `admin<SEED_EMAIL_DOMINIO>` e a `SEED_PASSWORD`; o sistema
+    leva direto para a troca de senha (ver [Primeiro acesso](#primeiro-acesso)). As outras três
+    contas-base (gestor, coletador, visualizador) usam a mesma senha provisória: entregue a
+    quem vai usar ou desative em **Usuários**.
+
+11. **Backup:** agende `scripts/backup-docker.sh` (o `npm run backup` roda no host e não alcança
+    o banco, que não publica porta). Ele faz o `pg_dump` dentro do contêiner, grava em
+    `backups/` e aplica a retenção (`BACKUP_RETENCAO`, padrão 30):
+
+    ```cron
+    0 3 * * * cd /opt/criapesquisa && ./scripts/backup-docker.sh >> /var/log/criapesquisa-backup.log 2>&1
+    ```
+
+    Guarde uma cópia **fora da VM** — backup que mora junto do banco não protege contra perda
+    da máquina. Teste a restauração num banco de teste:
+
+    ```bash
+    $C exec -T postgres createdb -U cria_user restauro_teste
+    $C exec -T postgres pg_restore -U cria_user -d restauro_teste --no-owner < backups/<arquivo>.dump
+    ```
+
+### Atualizar uma instalação existente
 
 ```bash
-cp .env.prod.example .env.prod      # preencha JWT_SECRET, senhas e domínios
-docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
-
-# Só na primeira vez: contas-base, municípios e pesquisas.
-docker compose -f docker-compose.prod.yml --env-file .env.prod --profile seed run --rm seed
+cd /opt/criapesquisa
+git pull
+$C up -d --build      # a migração roda sozinha antes da API
 ```
 
-**Uma vez, depois do deploy que trouxe os indicadores novos** (na VM da SECRIA, a partir do
-código vindo do GitHub): inclua a pergunta "Semana gestacional atual" na pesquisa Gestante
-publicada. O script é idempotente.
-
-1. Rode o script:
-
-   ```bash
-   docker compose -f docker-compose.prod.yml --env-file .env.prod --profile seed run --rm seed npx tsx scripts/adicionar-semana-gestacional.ts
-   ```
-
-2. Confira a saída: deve haver uma linha `pergunta criada: <id>` (primeira vez) ou
-   `já existia: <id>` (reexecução). **Saída vazia significa que o script não rodou**
-   (guarda de execução direta) — não siga adiante; reporte o problema.
-3. Só então reinicie a API:
-
-   ```bash
-   docker compose -f docker-compose.prod.yml --env-file .env.prod restart api
-   ```
-
-#### Importar os indicadores da planilha (uma vez)
-
-1. Exporte a planilha "Exportação Indicadores" do Google Sheets como `.xlsx` e copie para a VM
-   (ex.: `/tmp/indicadores.xlsx`). **Não** coloque o arquivo dentro do repositório: ele tem
-   e-mails pessoais na coluna "Usuario" (o importador não lê essa coluna).
-2. Confirme que o arquivo existe: `ls -l /tmp/indicadores.xlsx`. **Se não existir, pare**
-   (com o arquivo ausente o docker cria um diretório vazio nesse caminho).
-3. Rode, passando o arquivo para dentro do contêiner:
-
-   ```bash
-   docker compose -f docker-compose.prod.yml --env-file .env.prod --profile seed run --rm \
-     -v /tmp/indicadores.xlsx:/tmp/indicadores.xlsx:ro seed npx tsx scripts/importar-indicadores.ts /tmp/indicadores.xlsx
-   ```
-
-4. Confira a saída: a primeira linha deve ser "110 lidas · …". Saída vazia = o script não rodou.
-   Rodar de novo é seguro: indicadores já importados (e já revisados) não são tocados.
-5. Reinicie a API: `docker compose -f docker-compose.prod.yml --env-file .env.prod restart api`.
-6. Os indicadores aparecem em **Indicadores** (menu Administração) como "Para revisar".
-   Nenhum número aparece no sistema até alguém ativar o indicador.
-7. Apague o arquivo da VM: `rm /tmp/indicadores.xlsx`.
-
-Gere os segredos com algo como `node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"`.
-`SEED_PASSWORD` precisa atender à política de senha — o seed recusa senha fraca em produção.
-
-Conferência depois de subir: `curl http://localhost:8080/api/health` deve responder
-`{"status":"ok", ... "banco":"ok"}`, e entrar com `admin<SEED_EMAIL_DOMINIO>` leva direto
-para a troca de senha.
-
-**Backup em produção:** o banco não publica porta, então o `npm run backup` (que roda no
-host) não alcança ele. Use `scripts/backup-docker.sh`, que faz o `pg_dump` dentro do
-contêiner, grava em `backups/` e aplica a mesma retenção (`BACKUP_RETENCAO`, padrão 30):
-
-```cron
-0 3 * * * cd /opt/criapesquisa && ./scripts/backup-docker.sh >> /var/log/criapesquisa-backup.log 2>&1
-```
-
-Restauração (num banco de teste primeiro):
+**Antes de subir a versão que trouxe a importação de indicadores** (num banco que já
+existia): ela remove a coluna antiga `Indicador.origemPlanilha`. Confira que está vazia — tem
+de imprimir `0`:
 
 ```bash
-C="docker compose -f docker-compose.prod.yml --env-file .env.prod exec -T postgres"
-$C createdb -U cria_user restauro_teste
-$C pg_restore -U cria_user -d restauro_teste --no-owner < backups/<arquivo>.dump
+$C exec -T postgres psql -U cria_user -d criapesquisa -tAc 'SELECT count(*) FROM "Indicador" WHERE "origemPlanilha" IS NOT NULL'
 ```
 
-Sobe quatro serviços: `postgres`, `migracao` (aplica as migrations e sai), `api` e `web`
-(nginx servindo o front e encaminhando `/api`). A API só inicia depois que a migração
-termina bem — nada de aplicar schema na subida da aplicação.
-
-Pontos que o deploy assume:
-
-- **TLS termina antes**, num proxy à frente do `web`. Não sirva o sistema em HTTP na internet.
-- `TRUST_PROXY=1` já vem configurado no compose: é o que faz o rate limit de login enxergar
-  o IP real de quem chama, e não o do nginx.
-- O Postgres **não expõe porta no host** — acesso administrativo só por túnel.
-- O seed roda uma vez, pelo serviço `seed` (perfil `seed`), para criar as contas-base.
+Os scripts dos passos 6 a 8 são idempotentes: numa atualização, rode os que ainda não foram
+rodados naquele banco e depois `$C restart api`.
 
 ## Segurança e dados pessoais
 
