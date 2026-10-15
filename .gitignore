@@ -25,6 +25,10 @@ npm-debug.log*
 backups/
 *.backup.json
 
+# Planilhas — a de indicadores tem e-mails pessoais e o repositório é público (LGPD). NUNCA versionar.
+*.xlsx
+*.xls
+
 # Documentos internos de gestão — não publicar no repositório
 Executivo/
 
