@@ -222,20 +222,38 @@ describe("PUT /api/indicadores/:id", () => {
     expect(indicadorModel.atualizar).not.toHaveBeenCalled();
   });
 
-  it("edição de ESCALA confere a config gravada com as perguntas atuais -> 422 PERGUNTA_INCOMPATIVEL", async () => {
-    vi.mocked(indicadorModel.obterPorId).mockResolvedValue({
-      id: "i1", tipo: "ESCALA", config: { perguntaId: "pn", notas: { Antes: 100 } },
-    } as never);
-    vi.mocked(indicadorModel.perguntasPorId).mockResolvedValue([
-      { id: "pn", tipo: "ESCOLHA_UNICA", opcoes: ["Antes", "Após"] },
-    ]);
-    const res = await request(app)
-      .put("/api/indicadores/i1")
-      .set("Authorization", `Bearer ${tokenGestor}`)
-      .send({ nome: "Novo nome" });
-    expect(res.status).toBe(422);
-    expect(res.body.error.code).toBe("PERGUNTA_INCOMPATIVEL");
-    expect(indicadorModel.atualizar).not.toHaveBeenCalled();
+  describe("conferência das perguntas só quando tipo/config vêm no corpo", () => {
+    const gravado = { id: "i1", tipo: "ESCALA", config: { perguntaId: "pn", notas: { Antes: 100 } } };
+    const pergunta = { id: "pn", tipo: "ESCOLHA_UNICA" as const, opcoes: ["Antes", "Após"] };
+    const put = (corpo: object) =>
+      request(app).put("/api/indicadores/i1").set("Authorization", `Bearer ${tokenGestor}`).send(corpo);
+
+    it("só renomear indicador cuja pergunta ganhou opção -> 200 sem consultar perguntas", async () => {
+      vi.mocked(indicadorModel.obterPorId).mockResolvedValue(gravado as never);
+      vi.mocked(indicadorModel.perguntasPorId).mockResolvedValue([pergunta]);
+      vi.mocked(indicadorModel.atualizar).mockResolvedValue({ id: "i1" } as never);
+      const res = await put({ nome: "Novo nome" });
+      expect(res.status).toBe(200);
+      expect(indicadorModel.perguntasPorId).not.toHaveBeenCalled();
+    });
+
+    it("corpo com config incompleta -> 422 PERGUNTA_INCOMPATIVEL", async () => {
+      vi.mocked(indicadorModel.obterPorId).mockResolvedValue(gravado as never);
+      vi.mocked(indicadorModel.perguntasPorId).mockResolvedValue([pergunta]);
+      const res = await put({ config: { perguntaId: "pn", notas: { Antes: 100 } } });
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe("PERGUNTA_INCOMPATIVEL");
+      expect(indicadorModel.atualizar).not.toHaveBeenCalled();
+    });
+
+    it("corpo só com tipo e config gravada incompatível -> 422 PERGUNTA_INCOMPATIVEL", async () => {
+      vi.mocked(indicadorModel.obterPorId).mockResolvedValue(gravado as never);
+      vi.mocked(indicadorModel.perguntasPorId).mockResolvedValue([pergunta]);
+      const res = await put({ tipo: "ESCALA" });
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe("PERGUNTA_INCOMPATIVEL");
+      expect(indicadorModel.atualizar).not.toHaveBeenCalled();
+    });
   });
 
   it("codigo duplicado na edição (P2002) -> 409", async () => {

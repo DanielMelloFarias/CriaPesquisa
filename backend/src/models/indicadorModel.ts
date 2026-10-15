@@ -1,7 +1,6 @@
 import { prisma } from "../config/prisma.js";
 import type { Prisma, StatusIndicador } from "@prisma/client";
 import type { CriarIndicadorInput, AtualizarIndicadorInput } from "../helper/validators.js";
-
 import type { PerguntaParaConferir } from "../helper/indicadorPerguntas.js";
 
 export interface ListarIndicadoresFiltros {

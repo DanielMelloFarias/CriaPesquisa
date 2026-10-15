@@ -138,7 +138,8 @@ export async function atualizar(req: Request, res: Response) {
   const tipo = dados.tipo ?? (atual.tipo as CriarIndicadorInput["tipo"]);
   const dependencias = conferirConfig(tipo, dados.config ?? atual.config);
   await conferirReferencias(dependencias, dados.pesquisaId);
-  await conferirPerguntas(tipo, dados.config ?? atual.config);
+  // Só quando tipo/config mudam: indicador cuja pergunta ganhou opção continua editável (o motor marca INCOMPLETO).
+  if (dados.tipo !== undefined || dados.config !== undefined) await conferirPerguntas(tipo, dados.config ?? atual.config);
   await conferirCiclo(id, dependencias);
 
   const indicador = await indicadorModel.atualizar(id, dados, usuario.id, dependencias).catch(traduzirErroDeGravacao);
