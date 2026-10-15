@@ -34,4 +34,9 @@ export function regionalDoMunicipio(nome: string): string {
   return porNormalizado.get(normalizar(nome)) ?? "Sem regional informada";
 }
 
+/** Nomes das regionais na ordem do mapa (1ª…10ª). */
+export function listarRegionais(): string[] {
+  return Object.keys(REGIONAL_MAP);
+}
+
 export { REGIONAL_MAP };

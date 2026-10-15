@@ -8,6 +8,7 @@ import { painelRoutes } from "./painelRoutes.js";
 import { usuarioRoutes } from "./usuarioRoutes.js";
 import { logRoutes } from "./logRoutes.js";
 import { indicadorRoutes } from "./indicadorRoutes.js";
+import { regionaisRoutes } from "./regionaisRoutes.js";
 
 export const apiRoutes = Router();
 apiRoutes.use(healthRoutes);
@@ -19,3 +20,4 @@ apiRoutes.use(painelRoutes);
 apiRoutes.use(usuarioRoutes);
 apiRoutes.use(logRoutes);
 apiRoutes.use(indicadorRoutes);
+apiRoutes.use(regionaisRoutes);

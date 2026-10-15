@@ -72,12 +72,17 @@ describe("indicadorCalculoModel.carregarRespostas", () => {
 });
 
 describe("indicadorCalculoModel.perguntasDeSexo", () => {
-  it("procura pelo enunciado", async () => {
-    vi.mocked(prisma.pergunta.findMany).mockResolvedValue([{ id: "s1" }, { id: "s2" }] as never);
-    expect(await indicadorCalculoModel.perguntasDeSexo()).toEqual(new Set(["s1", "s2"]));
+  it("procura pelo enunciado e escolhe uma pergunta por pesquisa", async () => {
+    vi.mocked(prisma.pergunta.findMany).mockResolvedValue([
+      { id: "respC", pesquisaId: "crianca", enunciado: "Sexo biológico" },
+      { id: "crC", pesquisaId: "crianca", enunciado: "Sexo biológico da criança" },
+      { id: "gest", pesquisaId: "gestante", enunciado: "Sexo biológico" },
+    ] as never);
+    expect(await indicadorCalculoModel.perguntasDeSexo()).toEqual(new Map([["crianca", "crC"], ["gestante", "gest"]]));
     expect(vi.mocked(prisma.pergunta.findMany).mock.calls[0]![0]).toEqual({
       where: { enunciado: { contains: "Sexo biológico", mode: "insensitive" } },
-      select: { id: true },
+      select: { id: true, pesquisaId: true, enunciado: true },
+      orderBy: { ordem: "asc" },
     });
   });
 });

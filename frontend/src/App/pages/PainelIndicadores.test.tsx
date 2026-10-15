@@ -1,0 +1,146 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter } from "react-router-dom";
+import { PainelIndicadores } from "./PainelIndicadores.js";
+import { AuthProvider } from "../auth/AuthContext.js";
+import { ThemeModeProvider } from "../theme/ThemeModeContext.js";
+import { queryClient } from "../lib/queryClient.js";
+import { api } from "../lib/axios.js";
+
+const getSpy = vi.spyOn(api, "get");
+
+const base = {
+  tipo: "PROPORCAO", status: "ATIVO", motivoIncompleto: null, config: null, recorte: null, recorteConfig: null,
+  categoria: null, objetivo: null, meta: null, casasDecimais: 1, idsPlanilha: [], dadosPlanilha: null,
+};
+const ITENS = [
+  { ...base, id: "i1", codigo: "IND-1", nome: "Cobertura vacinal", pesquisaId: "p1", apresentacao: ["Escopo", "Perfil"] },
+  { ...base, id: "i2", codigo: "IND-2", nome: "Sem apresentação", pesquisaId: null, apresentacao: [] },
+];
+
+let ativos: unknown[] = ITENS;
+let calculo: () => Promise<unknown>;
+
+beforeEach(() => {
+  localStorage.clear();
+  queryClient.clear();
+  getSpy.mockReset();
+  ativos = ITENS;
+  calculo = async () => ({ data: { resultados: {} } });
+  localStorage.setItem("token", "t");
+  localStorage.setItem(
+    "usuario",
+    JSON.stringify({ id: "1", nome: "Ana", email: "ana@exemplo.local", papel: "VISUALIZADOR", precisaTrocarSenha: false }),
+  );
+  getSpy.mockImplementation((async (url: string) => {
+    if (url === "/pesquisas") return { data: { itens: [{ id: "p1", titulo: "Criança", status: "PUBLICADA" }, { id: "p2", titulo: "Gestante", status: "PUBLICADA" }] } };
+    if (url === "/regionais") return { data: { regionais: ["1ª Regional"] } };
+    if (url === "/indicadores/calculo") return calculo();
+    if (url === "/indicadores") return { data: { itens: ativos, total: ativos.length, page: 1, pageSize: 200, contadores: {} } };
+    throw new Error(`url inesperada ${url}`);
+  }) as never);
+});
+
+function renderTela() {
+  return render(
+    <ThemeModeProvider>
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <MemoryRouter>
+            <PainelIndicadores />
+          </MemoryRouter>
+        </AuthProvider>
+      </QueryClientProvider>
+    </ThemeModeProvider>,
+  );
+}
+
+const paramsCalculo = () =>
+  getSpy.mock.calls.filter((c) => c[0] === "/indicadores/calculo").map((c) => (c[1] as { params: Record<string, string> }).params);
+
+describe("PainelIndicadores", () => {
+  it("indicador sem apresentacao aparece em Escopo; Perfil mostra só o que tem Perfil", async () => {
+    renderTela();
+    expect(await screen.findByText("Cobertura vacinal")).toBeInTheDocument();
+    expect(screen.getByText("Sem apresentação")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Criança" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Ambas as pesquisas" })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("tab", { name: "Perfil" }));
+    expect(screen.getByText("Cobertura vacinal")).toBeInTheDocument();
+    expect(screen.queryByText("Sem apresentação")).not.toBeInTheDocument();
+  });
+
+  it("filtros refazem o cálculo e só enviam parâmetros preenchidos", async () => {
+    renderTela();
+    await screen.findByText("Cobertura vacinal");
+    expect(paramsCalculo()[0]).toEqual({});
+
+    await userEvent.selectOptions(screen.getByLabelText("Município"), "Maceió");
+    await waitFor(() => expect(paramsCalculo().some((p) => p.municipio === "Maceió")).toBe(true));
+
+    fireEvent.change(screen.getByLabelText("De"), { target: { value: "2026-01-01" } });
+    await waitFor(() => expect(paramsCalculo().some((p) => p.de === "2026-01-01")).toBe(true));
+    const ultimo = paramsCalculo().at(-1)!;
+    expect(ultimo.de).toBe("2026-01-01");
+    expect("ate" in ultimo).toBe(false);
+  });
+
+  it("erro 409 do cálculo mostra a mensagem da API e mantém as abas", async () => {
+    calculo = async () => {
+      throw {
+        isAxiosError: true,
+        response: { status: 409, data: { error: { code: "DEPENDENCIA_CIRCULAR", message: "dependência circular entre indicadores: a → b → a" } } },
+      };
+    };
+    // ADMIN: o link "Revisar indicador" apareceria se algum cartão fosse renderizado.
+    localStorage.setItem(
+      "usuario",
+      JSON.stringify({ id: "1", nome: "Ana", email: "ana@exemplo.local", papel: "ADMIN", precisaTrocarSenha: false }),
+    );
+    renderTela();
+    expect(await screen.findByText(/dependência circular entre indicadores: a → b → a/, undefined, { timeout: 4000 })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Escopo" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Perfil" })).toBeInTheDocument();
+    // Erro no cálculo: só o aviso, nenhum cartão "Não calculável" nem link de revisão.
+    expect(screen.queryByText(/Não calculável/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Revisar indicador")).not.toBeInTheDocument();
+    expect(screen.queryByText("Cobertura vacinal")).not.toBeInTheDocument();
+  });
+
+  it("filtro de pesquisa mostra só a seção dela e a de 'Ambas as pesquisas'", async () => {
+    ativos = [...ITENS, { ...base, id: "i3", codigo: "IND-3", nome: "Pré-natal", pesquisaId: "p2", apresentacao: ["Escopo"] }];
+    renderTela();
+    expect(await screen.findByRole("heading", { name: "Gestante" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Criança" })).toBeInTheDocument();
+
+    await userEvent.selectOptions(screen.getByLabelText("Pesquisa"), "p2");
+    await waitFor(() => expect(screen.queryByRole("heading", { name: "Criança" })).not.toBeInTheDocument());
+    expect(screen.queryByText("Cobertura vacinal")).not.toBeInTheDocument();
+    expect(await screen.findByText("Pré-natal")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Gestante" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Ambas as pesquisas" })).toBeInTheDocument();
+  });
+
+  it("sem indicadores ativos mostra a mensagem de vazio", async () => {
+    ativos = [];
+    renderTela();
+    expect(await screen.findByText(/Nenhum indicador ativo ainda/)).toBeInTheDocument();
+  });
+
+  it("filtro de município lista os 102 municípios de Alagoas", async () => {
+    renderTela();
+    await screen.findByText("Cobertura vacinal");
+    const opcoes = screen.getByLabelText("Município").querySelectorAll("option");
+    expect(opcoes.length).toBe(103);
+  });
+
+  it("enquanto o cálculo carrega, nenhum cartão mostra 'Não calculável'", async () => {
+    calculo = () => new Promise(() => {});
+    renderTela();
+    expect(await screen.findByText("Calculando…")).toBeInTheDocument();
+    expect(screen.queryByText(/Não calculável/)).not.toBeInTheDocument();
+  });
+});

@@ -47,7 +47,9 @@ function indicadorBase(extra: Partial<Indicador> = {}): Indicador {
     recorteConfig: null,
     apresentacao: ["Escopo"],
     categoria: "Saúde",
+    objetivo: null,
     meta: null,
+    casasDecimais: 1,
     idsPlanilha: ["CRIA-C-12"],
     dadosPlanilha: {
       nome: "Cobertura vacinal (planilha)",

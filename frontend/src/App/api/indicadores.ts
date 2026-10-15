@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { AxiosError } from "axios";
 import { api } from "../lib/axios.js";
+import type { ResultadoComRecorte } from "../lib/resultadoIndicador.js";
 
 export type StatusIndicador = "ATIVO" | "DEFINICAO_INCOMPLETA" | "INATIVO";
 
@@ -17,7 +18,9 @@ export interface Indicador {
   recorteConfig: { substituicoes: Array<{ de: string; para: string }> } | null;
   apresentacao: string[];
   categoria: string | null;
+  objetivo: string | null;
   meta: number | null;
+  casasDecimais: number;
   idsPlanilha: string[];
   dadosPlanilha: Record<string, string> | null;
 }
@@ -78,6 +81,54 @@ export function useSalvarIndicador(id: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["indicadores"] });
       qc.invalidateQueries({ queryKey: ["indicador", id] });
+    },
+  });
+}
+
+export interface FiltrosPainel {
+  pesquisaId?: string;
+  municipio?: string;
+  regional?: string;
+  sexo?: string;
+  de?: string;
+  ate?: string;
+}
+
+/** Todos os indicadores ativos (uma página grande; o painel agrupa no cliente). */
+export function useIndicadoresAtivos() {
+  return useQuery<Indicador[]>({
+    queryKey: ["indicadores-ativos"],
+    queryFn: async () => {
+      const { data } = await api.get<ListaIndicadores>("/indicadores", {
+        params: { status: "ATIVO", pageSize: 200 },
+      });
+      return data.itens;
+    },
+  });
+}
+
+/** Resultado de todos os indicadores por código; só envia os filtros preenchidos. */
+export function useCalculoPainel(filtros: FiltrosPainel) {
+  const params: Record<string, string> = {};
+  for (const [chave, valor] of Object.entries(filtros)) {
+    if (valor) params[chave] = valor;
+  }
+  return useQuery<Record<string, ResultadoComRecorte>>({
+    queryKey: ["indicadores-calculo-painel", params],
+    queryFn: async () => {
+      const { data } = await api.get<{ resultados: Record<string, ResultadoComRecorte> }>("/indicadores/calculo", { params });
+      return data.resultados ?? {};
+    },
+  });
+}
+
+export function useRegionais() {
+  return useQuery<string[]>({
+    queryKey: ["regionais"],
+    staleTime: Infinity,
+    queryFn: async () => {
+      const { data } = await api.get<{ regionais: string[] }>("/regionais");
+      return data.regionais;
     },
   });
 }

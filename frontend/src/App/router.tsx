@@ -25,6 +25,9 @@ const Indicadores = lazy(() => import("./pages/Indicadores.js").then((m) => ({ d
 const RevisaoIndicador = lazy(() =>
   import("./pages/RevisaoIndicador.js").then((m) => ({ default: m.RevisaoIndicador })),
 );
+const PainelIndicadores = lazy(() =>
+  import("./pages/PainelIndicadores.js").then((m) => ({ default: m.PainelIndicadores })),
+);
 const Logs = lazy(() => import("./pages/Logs.js").then((m) => ({ default: m.Logs })));
 
 export const router = createBrowserRouter([
@@ -44,6 +47,7 @@ export const router = createBrowserRouter([
           { path: "/", element: <Dashboard /> },
           { path: "/pesquisas", element: <Pesquisas /> },
           { path: "/pesquisas/:id", element: <ResultadosPesquisa /> },
+          { path: "/painel-indicadores", element: <PainelIndicadores /> },
         ],
       },
     ],
