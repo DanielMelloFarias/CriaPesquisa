@@ -1,5 +1,6 @@
 import type { ConfigIndicador, NoExpressao } from "../indicadorConfig.js";
-import { mesesCompletos, dataLocalAlagoas } from "./idade.js";
+import { mesesCompletos, diasCompletos, dataLocalAlagoas } from "./idade.js";
+import { lmsImcParaIdade, zscoreLms, percentilDeZ, type Sexo } from "./referencias/oms.js";
 import type { ItemAvaliavel, RespostaAvaliavel, ValorIndividual } from "./tipos.js";
 
 export type { ItemAvaliavel, RespostaAvaliavel, ValorIndividual };
@@ -153,7 +154,26 @@ export function avaliar(
       return Math.min(100, (consultas.valorNumero / faixa.esperado) * 100);
     }
 
-    // CLASSIFICACAO, CONTAGEM e DISTRIBUICAO não produzem valor individual:
+    case "PERCENTIL_OMS": {
+      const imc = valoresDependencias.get(config.imcIndicadorId);
+      const nascimento = resposta.itens.get(config.nascimentoPerguntaId)?.valorData;
+      const marcadas = opcoes(resposta.itens.get(config.sexoPerguntaId));
+      if (imc === null || imc === undefined || !nascimento || !resposta.enviadaEm || marcadas.length !== 1) return null;
+      // Opção fora das configuradas (ex.: "Intersexo") não vira menino nem menina.
+      const sexo: Sexo | null =
+        marcadas[0] === config.opcoesSexo.masculino ? "masculino" :
+        marcadas[0] === config.opcoesSexo.feminino ? "feminino" : null;
+      if (!sexo) return null;
+      // IMC ≤ 0 ou não finito: o LMS daria NaN/−Infinity, que o corte leria como número.
+      if (!Number.isFinite(imc) || imc <= 0) return null;
+      // Dia de vida no calendário de Alagoas; fora da tabela (negativo ou > 1856) = null.
+      const lms = lmsImcParaIdade(sexo, diasCompletos(nascimento, dataLocalAlagoas(resposta.enviadaEm)));
+      if (!lms) return null;
+      const p = percentilDeZ(zscoreLms(imc, lms));
+      return "abaixoDe" in config.corte ? (p < config.corte.abaixoDe ? 100 : 0) : (p > config.corte.acimaDe ? 100 : 0);
+    }
+
+    // CLASSIFICACAO, CONTAGEM, DISTRIBUICAO e ATALAH não produzem valor individual:
     // existem só na agregação.
     default:
       return null;

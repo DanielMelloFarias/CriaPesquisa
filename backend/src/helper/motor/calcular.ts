@@ -9,6 +9,7 @@ import { ordenarPorDependencia } from "../dependencias.js";
 import { avaliar, opcaoSemNota } from "./avaliadores.js";
 import { agregar, classificar, agregarDistribuicao, type ResultadoIndicador } from "./agregacao.js";
 import { estatisticas } from "./padronizacao.js";
+import { classificarAtalah, FAIXAS_ATALAH } from "./referencias/atalah.js";
 import type { RespostaAvaliavel, ValorIndividual } from "./tipos.js";
 
 /**
@@ -40,7 +41,12 @@ export type ResultadoComRecorte = ResultadoIndicador | { antes: ResultadoIndicad
 type Substituicoes = Array<{ de: string; para: string }>;
 
 /** Tipos que só existem na agregação: `avaliar` devolve null para eles (avaliadores.ts). */
-const TIPOS_SEM_VALOR_INDIVIDUAL: ReadonlySet<TipoIndicador> = new Set(["CLASSIFICACAO", "CONTAGEM", "DISTRIBUICAO"]);
+const TIPOS_SEM_VALOR_INDIVIDUAL: ReadonlySet<TipoIndicador> = new Set([
+  "CLASSIFICACAO",
+  "CONTAGEM",
+  "DISTRIBUICAO",
+  "ATALAH",
+]);
 
 /** Troca as perguntas do recorte, para avaliar o mesmo indicador no outro cenário. */
 function aplicarSubstituicoes(config: ConfigIndicador, substituicoes: Substituicoes): ConfigIndicador {
@@ -58,6 +64,10 @@ function aplicarSubstituicoes(config: ConfigIndicador, substituicoes: Substituic
       return { ...config, perguntaId: trocar(config.perguntaId) };
     case "META_POR_IDADE":
       return { ...config, perguntaId: trocar(config.perguntaId), nascimentoPerguntaId: trocar(config.nascimentoPerguntaId) };
+    case "PERCENTIL_OMS":
+      return { ...config, nascimentoPerguntaId: trocar(config.nascimentoPerguntaId), sexoPerguntaId: trocar(config.sexoPerguntaId) };
+    case "ATALAH":
+      return { ...config, semanaPerguntaId: trocar(config.semanaPerguntaId) };
     case "DERIVADA":
       return {
         ...config,
@@ -100,6 +110,24 @@ function agregarPorTipo(
     case "CONTAGEM":
       // Não há valor individual: cada resposta da pesquisa conta uma vez.
       return agregar(config, noEscopo.map((dentro) => (dentro ? 1 : null)), casasDecimais);
+    case "ATALAH": {
+      // Cada gestante cai numa das quatro faixas da semana dela. Reaproveita o
+      // `classificar` (maior resto) com a posição da faixa como valor: 0.5, 1.5, ...
+      const imcs = lerValores(config.imcIndicadorId) ?? [];
+      const posicoes = respostas.map((r, i) => {
+        if (!noEscopo[i]) return null;
+        const imc = imcs[i];
+        const semana = r.itens.get(config.semanaPerguntaId)?.valorNumero;
+        if (imc === null || imc === undefined || typeof semana !== "number") return null;
+        const faixa = classificarAtalah(imc, semana);
+        return faixa === null ? null : FAIXAS_ATALAH.indexOf(faixa) + 0.5;
+      });
+      return classificar(
+        posicoes,
+        FAIXAS_ATALAH.map((rotulo, i) => ({ rotulo, de: i, ate: i + 1 })),
+        casasDecimais,
+      );
+    }
     default:
       return agregar(config, valores, casasDecimais);
   }
@@ -214,6 +242,16 @@ export function calcular(
       const zDep = dependencias.find((dep) => porId.get(dep)!.tipo === "ZSCORE");
       if (zDep) {
         marcarIncompleto(id, `depende de ${zDep}, que não está em 0–100`, id, zDep);
+        continue;
+      }
+    }
+
+    // 5d. PERCENTIL_OMS e ATALAH comparam o IMC com tabelas em kg/m². Um z-score no
+    //     lugar do IMC daria número plausível e errado.
+    if (config.tipo === "PERCENTIL_OMS" || config.tipo === "ATALAH") {
+      const dep = config.imcIndicadorId;
+      if (porId.get(dep)!.tipo === "ZSCORE") {
+        marcarIncompleto(id, `depende de ${dep}, que é um z-score, não um IMC`, id, dep);
         continue;
       }
     }

@@ -201,3 +201,73 @@ describe("META_POR_IDADE", () => {
     expect(avaliar(fechada, r("2024-07-01", 2), new Map())).toBeNull();
   });
 });
+
+/**
+ * Valores de IMC derivados do LMS do JSON da OMS (referencias/oms-imc-idade.json),
+ * com IMC no k-ésimo DP = M·(1 + L·S·k)^(1/L):
+ *   menina, 730 d: L −0,5989  M 15,4052 S 0,08545 → −2 DP = 13,0919 (P2,3)
+ *   menino, 365 d: L −0,4113  M 16,7992 S 0,08009 → +1 DP = 18,2246 (P84,1); +2 DP = 19,8267 (P97,7)
+ *   19,9 está acima do +2 DP do dia 365 (z ≈ 2,04): folga de 0,07 kg/m².
+ */
+describe("PERCENTIL_OMS", () => {
+  const cfg = (corte: object) =>
+    validarConfig("PERCENTIL_OMS", {
+      imcIndicadorId: "imc", nascimentoPerguntaId: "nasc", sexoPerguntaId: "sexo",
+      opcoesSexo: { masculino: "Masculino", feminino: "Feminino" }, corte,
+    });
+  const entrevista = new Date("2026-01-01T12:00:00Z");
+  const r = (sexo: string | string[] | null, nasc: string | null, enviadaEm: Date | null = entrevista) =>
+    montarResposta(
+      "r",
+      [
+        ...(sexo ? [{ perguntaId: "sexo", opcoesSelecionadas: Array.isArray(sexo) ? sexo : [sexo] }] : []),
+        ...(nasc ? [{ perguntaId: "nasc", valorData: new Date(nasc) }] : []),
+      ],
+      null,
+      { enviadaEm },
+    );
+  const imc = (v: number | null) => new Map([["imc", v]]);
+
+  it("menina de 730 dias com IMC no −2 DP (P2,3) está abaixo do P10", () => {
+    expect(avaliar(cfg({ abaixoDe: 10 }), r("Feminino", "2024-01-02"), imc(13.092))).toBe(100);
+  });
+  it("menino de 365 dias com IMC na mediana não está abaixo do P10 nem acima do P85", () => {
+    expect(avaliar(cfg({ abaixoDe: 10 }), r("Masculino", "2025-01-01"), imc(16.7992))).toBe(0);
+    expect(avaliar(cfg({ acimaDe: 85 }), r("Masculino", "2025-01-01"), imc(16.7992))).toBe(0);
+  });
+  it("menino de 365 dias no +1 DP (P84,1) não passa do P85; no +2 DP passa", () => {
+    expect(avaliar(cfg({ acimaDe: 85 }), r("Masculino", "2025-01-01"), imc(18.225))).toBe(0);
+    expect(avaliar(cfg({ acimaDe: 85 }), r("Masculino", "2025-01-01"), imc(19.9))).toBe(100);
+  });
+  it("sexo fora das opções configuradas, ausente, sem nascimento, sem IMC ou acima de 5 anos = null", () => {
+    expect(avaliar(cfg({ abaixoDe: 10 }), r("Intersexo", "2025-01-01"), imc(16))).toBeNull();
+    expect(avaliar(cfg({ abaixoDe: 10 }), r(null, "2025-01-01"), imc(16))).toBeNull();
+    expect(avaliar(cfg({ abaixoDe: 10 }), r("Masculino", null), imc(16))).toBeNull();
+    expect(avaliar(cfg({ abaixoDe: 10 }), r("Masculino", "2025-01-01"), imc(null))).toBeNull();
+    expect(avaliar(cfg({ abaixoDe: 10 }), r("Masculino", "2020-06-01"), imc(16))).toBeNull();
+    expect(avaliar(cfg({ abaixoDe: 10 }), r("Masculino", "2025-01-01", null), imc(16))).toBeNull();
+  });
+  it("dois sexos marcados ou nascimento depois da entrevista = null", () => {
+    expect(avaliar(cfg({ abaixoDe: 10 }), r(["Masculino", "Feminino"], "2025-01-01"), imc(13))).toBeNull();
+    expect(avaliar(cfg({ abaixoDe: 10 }), r("Masculino", "2026-06-01"), imc(13))).toBeNull();
+  });
+  it("IMC zero, negativo ou não finito = null (o LMS daria NaN/−Infinity)", () => {
+    for (const v of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(avaliar(cfg({ abaixoDe: 10 }), r("Masculino", "2025-01-01"), imc(v))).toBeNull();
+      expect(avaliar(cfg({ acimaDe: 85 }), r("Masculino", "2025-01-01"), imc(v))).toBeNull();
+    }
+  });
+  it("entrevista após 21h em Alagoas usa o dia local (364), não o dia UTC (365)", () => {
+    // 2026-01-01T01:00Z = 22h de 31/12/2025 em Alagoas. P85 em IMC, pelo LMS do JSON
+    // (z_85 = 1,036433): dia 364 → 18,284264; dia 365 → 18,279666. 18,282 fica entre os
+    // dois: acima do P85 no dia 365, abaixo no 364 (folga ≈ 0,0023 kg/m² de cada lado,
+    // muito acima do erro de 7,5e-8 da aproximação de Φ).
+    const noite = new Date("2026-01-01T01:00:00Z");
+    expect(avaliar(cfg({ acimaDe: 85 }), r("Masculino", "2025-01-01", noite), imc(18.282))).toBe(0);
+    // Controle: ao meio-dia do mesmo 1º/jan (dia 365) o mesmo IMC passa do P85.
+    expect(avaliar(cfg({ acimaDe: 85 }), r("Masculino", "2025-01-01"), imc(18.282))).toBe(100);
+    // Fim da tabela (0–1856 d): nascido em 2020-12-01, no dia local 31/12/2025 tem 1856 dias
+    // (dentro); no dia UTC 01/01/2026 teria 1857 (fora → null).
+    expect(avaliar(cfg({ acimaDe: 85 }), r("Masculino", "2020-12-01", noite), imc(30))).toBe(100);
+  });
+});

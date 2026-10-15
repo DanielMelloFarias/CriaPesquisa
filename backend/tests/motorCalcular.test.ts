@@ -728,3 +728,132 @@ describe("ZSCORE", () => {
     });
   });
 });
+
+/** Semana 20 do Quadro 19 (atalah.json): baixo peso ≤ 21,5; sobrepeso ≥ 26,4; obesidade ≥ 31,1. */
+describe("ATALAH", () => {
+  const P = new Set(["imcAtual", "semana"]);
+  const inds = [
+    ind({ id: "imc", tipo: "MEDIA", config: { perguntaId: "imcAtual" } }),
+    ind({ id: "atalah", tipo: "ATALAH", config: { imcIndicadorId: "imc", semanaPerguntaId: "semana" } }),
+  ];
+  const g = (id: string, imc: number, semana?: number) =>
+    montarResposta(id, [{ perguntaId: "imcAtual", valorNumero: imc }, ...(semana === undefined ? [] : [{ perguntaId: "semana", valorNumero: semana }])]);
+
+  it("% por faixa, sem semana fora da conta", () => {
+    const res = calcular(inds, [g("a", 21.0, 20), g("b", 22.0, 20), g("c", 27.0, 20), g("d", 32.0, 20), g("e", 22.0)], P);
+    expect(res.get("atalah")).toEqual({
+      status: "OK_FAIXAS",
+      faixas: [
+        { rotulo: "Baixo peso", percentual: 25 },
+        { rotulo: "Adequado", percentual: 25 },
+        { rotulo: "Sobrepeso", percentual: 25 },
+        { rotulo: "Obesidade", percentual: 25 },
+      ],
+    });
+  });
+
+  it("semana fora da tabela também fica fora da conta", () => {
+    const res = calcular(inds, [g("a", 21.0, 20), g("b", 22.0, 3), g("c", 22.0, 20.5)], P);
+    expect(res.get("atalah")).toEqual({
+      status: "OK_FAIXAS",
+      faixas: [
+        { rotulo: "Baixo peso", percentual: 100 },
+        { rotulo: "Adequado", percentual: 0 },
+        { rotulo: "Sobrepeso", percentual: 0 },
+        { rotulo: "Obesidade", percentual: 0 },
+      ],
+    });
+  });
+
+  it("ninguém com semana = SEM_DADOS", () => {
+    expect(calcular(inds, [g("a", 22)], P).get("atalah")).toEqual({ status: "SEM_DADOS" });
+  });
+
+  it("máscara do painel tira a gestante da conta", () => {
+    const res = calcular(inds, [g("a", 21.0, 20), g("b", 32.0, 20)], P, [false, true]);
+    expect(res.get("atalah")).toMatchObject({ faixas: [{ percentual: 0 }, { percentual: 0 }, { percentual: 0 }, { percentual: 100 }] });
+  });
+
+  it("ATALAH não serve de termo de COMPOSTO (sem valor individual)", () => {
+    const comp = ind({ id: "c", tipo: "COMPOSTO", config: { termos: [{ indicadorId: "atalah", peso: 1 }], divisor: 1 } });
+    expect(calcular([...inds, comp], [g("a", 22, 20)], P).get("c")).toMatchObject({ status: "INCOMPLETO", dependencia: "atalah" });
+  });
+
+  it("recorte ANTES/APÓS troca a pergunta da semana", () => {
+    const PP = new Set(["imcAtual", "semana", "semana2"]);
+    const pareado = ind({
+      id: "atalah",
+      tipo: "ATALAH",
+      config: { imcIndicadorId: "imc", semanaPerguntaId: "semana" },
+      recorte: "ANTES_APOS",
+      recorteConfig: { substituicoes: [{ de: "semana", para: "semana2" }] },
+    });
+    // IMC 32 na semana 20 → Obesidade (≥ 31,1).
+    const resposta = montarResposta("a", [
+      { perguntaId: "imcAtual", valorNumero: 32 },
+      { perguntaId: "semana", valorNumero: 20 },
+    ]);
+    // Sem a semana2 respondida, o APÓS não tem ninguém: a troca aconteceu de fato.
+    expect(calcular([inds[0], pareado], [resposta], PP).get("atalah")).toEqual({
+      antes: { status: "OK_FAIXAS", faixas: [
+        { rotulo: "Baixo peso", percentual: 0 },
+        { rotulo: "Adequado", percentual: 0 },
+        { rotulo: "Sobrepeso", percentual: 0 },
+        { rotulo: "Obesidade", percentual: 100 },
+      ] },
+      apos: { status: "SEM_DADOS" },
+    });
+  });
+});
+
+describe("PERCENTIL_OMS no calcular", () => {
+  const P = new Set(["imcCrianca", "nasc", "sexo"]);
+  const percentil = (imcIndicadorId: string) =>
+    ind({
+      id: "p85",
+      tipo: "PERCENTIL_OMS",
+      config: {
+        imcIndicadorId, nascimentoPerguntaId: "nasc", sexoPerguntaId: "sexo",
+        opcoesSexo: { masculino: "Masculino", feminino: "Feminino" }, corte: { acimaDe: 85 },
+      },
+    });
+  const imc = ind({ id: "imc", tipo: "MEDIA", config: { perguntaId: "imcCrianca" } });
+  const crianca = (id: string, v: number, sexo = "Masculino") =>
+    montarResposta(
+      id,
+      [
+        { perguntaId: "imcCrianca", valorNumero: v },
+        { perguntaId: "nasc", valorData: new Date("2025-01-01") },
+        { perguntaId: "sexo", opcoesSelecionadas: [sexo] },
+      ],
+      null,
+      { enviadaEm: new Date("2026-01-01T12:00:00Z") },
+    );
+
+  it("% de crianças acima do P85; sexo fora das opções sai do denominador", () => {
+    // Menino de 365 d: 19,9 > +2 DP (19,8267) → 100; 16,7992 = mediana → 0; Intersexo → null.
+    const res = calcular([imc, percentil("imc")], [crianca("a", 19.9), crianca("b", 16.7992), crianca("c", 19.9, "Intersexo")], P);
+    expect(res.get("p85")).toEqual({ status: "OK", valor: 50 });
+  });
+
+  it.each([
+    ["sexo", "sexo2"],
+    ["nasc", "nasc2"],
+  ])("recorte ANTES/APÓS troca a pergunta %s", (de, para) => {
+    const pareado = { ...percentil("imc"), recorte: "ANTES_APOS" as const, recorteConfig: { substituicoes: [{ de, para }] } };
+    const PP = new Set([...P, "sexo2", "nasc2"]);
+    // A pergunta do APÓS não foi respondida: se a troca não acontecer, o APÓS repete o ANTES.
+    expect(calcular([imc, pareado], [crianca("a", 19.9)], PP).get("p85")).toEqual({
+      antes: { status: "OK", valor: 100 },
+      apos: { status: "SEM_DADOS" },
+    });
+  });
+
+  it("IMC vindo de um ZSCORE = INCOMPLETO (z-score não é IMC)", () => {
+    const z = ind({ id: "z", tipo: "ZSCORE", config: { componentes: [{ indicadorId: "imc", peso: 1 }] } });
+    const at = ind({ id: "at", tipo: "ATALAH", config: { imcIndicadorId: "z", semanaPerguntaId: "nasc" } });
+    const res = calcular([imc, z, percentil("z"), at], [crianca("a", 19.9), crianca("b", 16.7992)], P);
+    expect(res.get("p85")).toEqual({ status: "INCOMPLETO", motivo: "depende de z, que é um z-score, não um IMC", dependencia: "z" });
+    expect(res.get("at")).toEqual({ status: "INCOMPLETO", motivo: "depende de z, que é um z-score, não um IMC", dependencia: "z" });
+  });
+});
