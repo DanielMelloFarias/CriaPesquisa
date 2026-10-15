@@ -12,7 +12,7 @@ import { regrasIndicadorMescladoSchema, type CriarIndicadorInput, type Atualizar
 import { indicadorCalculoModel } from "../models/indicadorCalculoModel.js";
 import { extrairFiltrosIndicador, chaveDeCache } from "../helper/filtrosIndicador.js";
 import { lerCache, gravarCache, invalidarCache, geracaoAtual } from "../helper/cacheIndicadores.js";
-import { calcular, type IndicadorParaCalculo } from "../helper/motor/calcular.js";
+import { calcular, aplicarSubstituicoes, type IndicadorParaCalculo } from "../helper/motor/calcular.js";
 import { ItemDuplicado } from "../helper/motor/avaliadores.js";
 import { mascaraDoRecorte } from "../helper/recortePainel.js";
 
@@ -46,13 +46,28 @@ async function conferirReferencias(dependencias: string[], pesquisaId?: string):
 
 const TIPOS_CONFERIDOS = new Set(["ESCALA", "META_POR_IDADE", "PERCENTIL_OMS", "ATALAH"]);
 
-/** Tipos novos: confere a config contra o tipo e as opções das perguntas reais (422 se não bater). */
-async function conferirPerguntas(tipo: CriarIndicadorInput["tipo"], config: unknown): Promise<void> {
+const recorteConfigSchema = z.object({
+  substituicoes: z.array(z.object({ de: z.string(), para: z.string() })),
+});
+
+/**
+ * Tipos novos: confere a config contra o tipo e as opções das perguntas reais (422 se não bater).
+ * Com recorte ANTES/APÓS, confere também o cenário APÓS (config com as perguntas `para`
+ * no lugar das `de`): a escala precisa de nota para cada opção da pergunta trocada, e o
+ * sexo trocado precisa ter as duas opções configuradas.
+ */
+async function conferirPerguntas(tipo: CriarIndicadorInput["tipo"], config: unknown, recorteConfig?: unknown): Promise<void> {
   if (!TIPOS_CONFERIDOS.has(tipo)) return;
   const cfg = validarConfig(tipo, config);
-  const ids = perguntasReferenciadas(cfg);
+  const substituicoes = recorteConfigSchema.safeParse(recorteConfig);
+  const cenarios =
+    substituicoes.success && substituicoes.data.substituicoes.length > 0
+      ? [cfg, aplicarSubstituicoes(cfg, substituicoes.data.substituicoes)]
+      : [cfg];
+  const ids = [...new Set(cenarios.flatMap((c) => perguntasReferenciadas(c)))];
   const perguntas = new Map((await indicadorModel.perguntasPorId(ids)).map((p) => [p.id, p]));
-  const problemas = problemasDasPerguntas(cfg, perguntas);
+  // Pergunta que não foi trocada aparece nos dois cenários: o problema dela vale uma vez só.
+  const problemas = [...new Set(cenarios.flatMap((c) => problemasDasPerguntas(c, perguntas)))];
   if (problemas.length > 0) {
     throw new HttpError(422, "PERGUNTA_INCOMPATIVEL", "Configuração não confere com as perguntas", { problemas });
   }
@@ -98,7 +113,7 @@ export async function criar(req: Request, res: Response) {
 
   const dependencias = conferirConfig(dados.tipo, dados.config);
   await conferirReferencias(dependencias, dados.pesquisaId);
-  await conferirPerguntas(dados.tipo, dados.config);
+  await conferirPerguntas(dados.tipo, dados.config, dados.recorteConfig);
   await conferirCiclo("__novo__", dependencias);
 
   const indicador = await indicadorModel.criar(dados, usuario.id, dependencias).catch(traduzirErroDeGravacao);
@@ -138,8 +153,11 @@ export async function atualizar(req: Request, res: Response) {
   const tipo = dados.tipo ?? (atual.tipo as CriarIndicadorInput["tipo"]);
   const dependencias = conferirConfig(tipo, dados.config ?? atual.config);
   await conferirReferencias(dependencias, dados.pesquisaId);
-  // Só quando tipo/config mudam: indicador cuja pergunta ganhou opção continua editável (o motor marca INCOMPLETO).
-  if (dados.tipo !== undefined || dados.config !== undefined) await conferirPerguntas(tipo, dados.config ?? atual.config);
+  // Só quando tipo/config/recorte mudam: indicador cuja pergunta ganhou opção continua
+  // editável (o motor marca INCOMPLETO). Confere o registro mesclado (gravado + corpo).
+  if (dados.tipo !== undefined || dados.config !== undefined || dados.recorteConfig !== undefined) {
+    await conferirPerguntas(tipo, dados.config ?? atual.config, dados.recorteConfig ?? atual.recorteConfig);
+  }
   await conferirCiclo(id, dependencias);
 
   const indicador = await indicadorModel.atualizar(id, dados, usuario.id, dependencias).catch(traduzirErroDeGravacao);

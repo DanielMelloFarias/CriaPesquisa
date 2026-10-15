@@ -103,6 +103,78 @@ describe("POST /api/indicadores", () => {
     expect(indicadorModel.criar).toHaveBeenCalledOnce();
   });
 
+  describe("recorte ANTES/APÓS: a pergunta trocada também é conferida", () => {
+    const escalaPareada = {
+      codigo: "PN",
+      nome: "Pré-natal",
+      tipo: "ESCALA",
+      config: { perguntaId: "pnAntes", notas: { Baixa: 0, Alta: 100 } },
+      recorte: "ANTES_APOS",
+      recorteConfig: { substituicoes: [{ de: "pnAntes", para: "pnDepois" }] },
+    };
+
+    it("ESCALA cuja pergunta do APÓS tem opção sem nota -> 422 PERGUNTA_INCOMPATIVEL", async () => {
+      vi.mocked(indicadorModel.perguntasPorId).mockResolvedValue([
+        { id: "pnAntes", tipo: "ESCOLHA_UNICA", opcoes: ["Baixa", "Alta"] },
+        { id: "pnDepois", tipo: "ESCOLHA_UNICA", opcoes: ["Baixa", "Alta", "Nova opção"] },
+      ]);
+      const res = await request(app).post("/api/indicadores").set("Authorization", `Bearer ${tokenGestor}`).send(escalaPareada);
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe("PERGUNTA_INCOMPATIVEL");
+      expect(res.body.error.details.problemas).toEqual(['opção "Nova opção" sem nota']);
+      expect(indicadorModel.criar).not.toHaveBeenCalled();
+    });
+
+    it("ESCALA com as duas perguntas cobertas pelas notas -> 201", async () => {
+      vi.mocked(indicadorModel.perguntasPorId).mockResolvedValue([
+        { id: "pnAntes", tipo: "ESCOLHA_UNICA", opcoes: ["Baixa", "Alta"] },
+        { id: "pnDepois", tipo: "ESCOLHA_UNICA", opcoes: ["Baixa", "Alta"] },
+      ]);
+      vi.mocked(indicadorModel.criar).mockResolvedValue({ id: "i1" } as never);
+      const res = await request(app).post("/api/indicadores").set("Authorization", `Bearer ${tokenGestor}`).send(escalaPareada);
+      expect(res.status).toBe(201);
+    });
+
+    it("PERCENTIL_OMS cuja pergunta de sexo do APÓS não tem a opção feminina -> 422", async () => {
+      vi.mocked(indicadorModel.perguntasPorId).mockResolvedValue([
+        { id: "nasc", tipo: "DATA", opcoes: [] },
+        { id: "sexo", tipo: "ESCOLHA_UNICA", opcoes: ["Masculino", "Feminino"] },
+        { id: "sexo2", tipo: "ESCOLHA_UNICA", opcoes: ["Masculino", "Menina"] },
+      ]);
+      const res = await request(app)
+        .post("/api/indicadores")
+        .set("Authorization", `Bearer ${tokenGestor}`)
+        .send({
+          codigo: "P10",
+          nome: "Abaixo do P10",
+          tipo: "PERCENTIL_OMS",
+          config: {
+            imcIndicadorId: "imc", nascimentoPerguntaId: "nasc", sexoPerguntaId: "sexo",
+            opcoesSexo: { masculino: "Masculino", feminino: "Feminino" }, corte: { abaixoDe: 10 },
+          },
+          recorte: "ANTES_APOS",
+          recorteConfig: { substituicoes: [{ de: "sexo", para: "sexo2" }] },
+        });
+      expect(res.status).toBe(422);
+      expect(res.body.error.details.problemas).toEqual(['opção "Feminino" não existe na pergunta sexo2']);
+    });
+
+    it("PUT só com recorteConfig confere a config gravada no cenário APÓS -> 422", async () => {
+      vi.mocked(indicadorModel.obterPorId).mockResolvedValue({ id: "i1", tipo: "ESCALA", config: escalaPareada.config } as never);
+      vi.mocked(indicadorModel.perguntasPorId).mockResolvedValue([
+        { id: "pnAntes", tipo: "ESCOLHA_UNICA", opcoes: ["Baixa", "Alta"] },
+        { id: "pnDepois", tipo: "ESCOLHA_UNICA", opcoes: ["Baixa", "Alta", "Nova opção"] },
+      ]);
+      const res = await request(app)
+        .put("/api/indicadores/i1")
+        .set("Authorization", `Bearer ${tokenGestor}`)
+        .send({ recorte: "ANTES_APOS", recorteConfig: escalaPareada.recorteConfig });
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe("PERGUNTA_INCOMPATIVEL");
+      expect(indicadorModel.atualizar).not.toHaveBeenCalled();
+    });
+  });
+
   it("codigo duplicado (P2002) -> 409 CODIGO_DUPLICADO", async () => {
     vi.mocked(indicadorModel.criar).mockRejectedValue(
       new Prisma.PrismaClientKnownRequestError("unique", { code: "P2002", clientVersion: "x" }),

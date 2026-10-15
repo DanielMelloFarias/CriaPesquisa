@@ -1,6 +1,7 @@
 import type { ConfigIndicador, NoExpressao } from "../indicadorConfig.js";
 import { mesesCompletos, diasCompletos, dataLocalAlagoas } from "./idade.js";
 import { lmsImcParaIdade, zscoreLms, percentilDeZ, type Sexo } from "./referencias/oms.js";
+import { imcPlausivel } from "./imc.js";
 import type { ItemAvaliavel, RespostaAvaliavel, ValorIndividual } from "./tipos.js";
 
 export type { ItemAvaliavel, RespostaAvaliavel, ValorIndividual };
@@ -147,6 +148,8 @@ export function avaliar(
       const consultas = resposta.itens.get(config.perguntaId);
       const nascimento = resposta.itens.get(config.nascimentoPerguntaId)?.valorData;
       if (!temNumero(consultas) || !nascimento || !resposta.enviadaEm) return null;
+      // Consultas negativas são erro de digitação: o teto de 100 não as pegaria.
+      if (consultas.valorNumero < 0) return null;
       const meses = mesesCompletos(nascimento, dataLocalAlagoas(resposta.enviadaEm));
       if (meses < 0) return null;
       const faixa = config.faixas.find((f) => meses >= f.deMeses && (f.ateMeses === null || meses < f.ateMeses));
@@ -164,8 +167,9 @@ export function avaliar(
         marcadas[0] === config.opcoesSexo.masculino ? "masculino" :
         marcadas[0] === config.opcoesSexo.feminino ? "feminino" : null;
       if (!sexo) return null;
-      // IMC ≤ 0 ou não finito: o LMS daria NaN/−Infinity, que o corte leria como número.
-      if (!Number.isFinite(imc) || imc <= 0) return null;
+      // IMC fora de [8, 60] ou não finito: erro de digitação (altura em cm), não criança.
+      // Com IMC ≤ 0 o LMS ainda daria NaN/−Infinity, que o corte leria como número.
+      if (!imcPlausivel(imc)) return null;
       // Dia de vida no calendário de Alagoas; fora da tabela (negativo ou > 1856) = null.
       const lms = lmsImcParaIdade(sexo, diasCompletos(nascimento, dataLocalAlagoas(resposta.enviadaEm)));
       if (!lms) return null;

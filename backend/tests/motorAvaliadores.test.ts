@@ -195,6 +195,10 @@ describe("META_POR_IDADE", () => {
     expect(avaliar(cfg, r("2025-07-01", 3, null), new Map())).toBeNull();
     expect(avaliar(cfg, r("2026-06-01", 3), new Map())).toBeNull();
   });
+  it("consultas negativas = null (erro de digitação, não zero nem percentual negativo)", () => {
+    expect(avaliar(cfg, r("2025-07-01", -1), new Map())).toBeNull();
+    expect(avaliar(cfg, r("2023-07-01", -3), new Map())).toBeNull();
+  });
   it("idade fora de todas as faixas = null", () => {
     const fechada = validarConfig("META_POR_IDADE", {
       perguntaId: "consultas", nascimentoPerguntaId: "nasc", faixas: [{ deMeses: 0, ateMeses: 12, esperado: 7 }],
@@ -257,6 +261,16 @@ describe("PERCENTIL_OMS", () => {
       expect(avaliar(cfg({ abaixoDe: 10 }), r("Masculino", "2025-01-01"), imc(v))).toBeNull();
       expect(avaliar(cfg({ acimaDe: 85 }), r("Masculino", "2025-01-01"), imc(v))).toBeNull();
     }
+  });
+  it("IMC implausível (fora de 8–60 kg/m²) = null: altura em cm não vira criança abaixo do P10", () => {
+    // 0,002 ficaria muito abaixo do P10 e 75 muito acima do P85 se entrassem no LMS.
+    for (const v of [0.002, 75]) {
+      expect(avaliar(cfg({ abaixoDe: 10 }), r("Masculino", "2025-01-01"), imc(v))).toBeNull();
+      expect(avaliar(cfg({ acimaDe: 85 }), r("Masculino", "2025-01-01"), imc(v))).toBeNull();
+    }
+    // As bordas da faixa ainda contam.
+    expect(avaliar(cfg({ abaixoDe: 10 }), r("Masculino", "2025-01-01"), imc(8))).toBe(100);
+    expect(avaliar(cfg({ acimaDe: 85 }), r("Masculino", "2025-01-01"), imc(60))).toBe(100);
   });
   it("entrevista após 21h em Alagoas usa o dia local (364), não o dia UTC (365)", () => {
     // 2026-01-01T01:00Z = 22h de 31/12/2025 em Alagoas. P85 em IMC, pelo LMS do JSON

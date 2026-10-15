@@ -10,6 +10,7 @@ import { avaliar, opcaoSemNota } from "./avaliadores.js";
 import { agregar, classificar, agregarDistribuicao, type ResultadoIndicador } from "./agregacao.js";
 import { estatisticas } from "./padronizacao.js";
 import { classificarAtalah, FAIXAS_ATALAH } from "./referencias/atalah.js";
+import { imcPlausivel } from "./imc.js";
 import type { RespostaAvaliavel, ValorIndividual } from "./tipos.js";
 
 /**
@@ -52,7 +53,7 @@ const TIPOS_SEM_VALOR_INDIVIDUAL: ReadonlySet<TipoIndicador> = new Set([
 const TIPOS_IMC: ReadonlySet<TipoIndicador> = new Set(["MEDIA", "DERIVADA"]);
 
 /** Troca as perguntas do recorte, para avaliar o mesmo indicador no outro cenário. */
-function aplicarSubstituicoes(config: ConfigIndicador, substituicoes: Substituicoes): ConfigIndicador {
+export function aplicarSubstituicoes(config: ConfigIndicador, substituicoes: Substituicoes): ConfigIndicador {
   const mapa = new Map(substituicoes.map((s) => [s.de, s.para]));
   const trocar = (id: string) => mapa.get(id) ?? id;
 
@@ -122,8 +123,9 @@ function agregarPorTipo(
         const imc = imcs[i];
         const semana = r.itens.get(config.semanaPerguntaId)?.valorNumero;
         if (imc === null || imc === undefined || typeof semana !== "number") return null;
-        // IMC ≤ 0 ou não finito não é medida: sem isto cairia em "Baixo peso".
-        if (!Number.isFinite(imc) || imc <= 0) return null;
+        // IMC fora de [8, 60] ou não finito não é medida (altura em cm dá ≈ 0,002):
+        // sem isto cairia em "Baixo peso" ou "Obesidade".
+        if (!imcPlausivel(imc)) return null;
         const faixa = classificarAtalah(imc, semana);
         return faixa === null ? null : FAIXAS_ATALAH.indexOf(faixa) + 0.5;
       });
@@ -293,6 +295,15 @@ export function calcular(
       if (faltandoApos) {
         marcarIncompleto(id, `pergunta ${faltandoApos} não existe mais`, id);
         continue;
+      }
+      // 6b. A mesma regra do 3b no cenário APÓS: a pergunta trocada também pode ter
+      //     ganhado opção sem nota, e o APÓS sairia com o denominador encolhido.
+      if (configApos.tipo === "ESCALA") {
+        const semNotaApos = opcaoSemNota(configApos, respostas.filter((_, i) => daPesquisa[i]));
+        if (semNotaApos) {
+          marcarIncompleto(id, `opção "${semNotaApos}" sem nota na escala`, id);
+          continue;
+        }
       }
     }
 

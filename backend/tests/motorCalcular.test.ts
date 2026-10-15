@@ -644,6 +644,30 @@ describe("ESCALA no calcular", () => {
     ];
     expect(calcular([cpre], respostas, PERGUNTAS).get("cpre")).toEqual({ status: "OK", valor: 100 });
   });
+  it("pareada: opção sem nota só na pergunta do APÓS também vira INCOMPLETO", () => {
+    // Sem a guarda no APÓS: a sai do denominador em silêncio e o APÓS vira 100 (b sozinho).
+    const cpre = ind({
+      id: "cpre",
+      tipo: "ESCALA",
+      config: { perguntaId: "antes", notas: { Baixa: 0, Alta: 100 } },
+      recorte: "ANTES_APOS",
+      recorteConfig: { substituicoes: [{ de: "antes", para: "depois" }] },
+    });
+    const respostas = [
+      montarResposta("a", [
+        { perguntaId: "antes", opcoesSelecionadas: ["Baixa"] },
+        { perguntaId: "depois", opcoesSelecionadas: ["Nova opção"] },
+      ]),
+      montarResposta("b", [
+        { perguntaId: "antes", opcoesSelecionadas: ["Alta"] },
+        { perguntaId: "depois", opcoesSelecionadas: ["Alta"] },
+      ]),
+    ];
+    expect(calcular([cpre], respostas, new Set(["antes", "depois"])).get("cpre")).toEqual({
+      status: "INCOMPLETO",
+      motivo: 'opção "Nova opção" sem nota na escala',
+    });
+  });
 });
 
 /**
@@ -774,6 +798,20 @@ describe("ATALAH", () => {
         { rotulo: "Adequado", percentual: 0 },
         { rotulo: "Sobrepeso", percentual: 0 },
         { rotulo: "Obesidade", percentual: 100 },
+      ],
+    });
+  });
+
+  it("IMC implausível (fora de 8–60 kg/m²) não conta: nem Baixo peso nem Obesidade", () => {
+    // 0,002 = altura digitada em cm; 75 = erro de digitação. Só a fica na conta (Adequado).
+    const res = calcular(inds, [g("a", 22.0, 20), g("b", 0.002, 20), g("c", 75, 20)], P);
+    expect(res.get("atalah")).toEqual({
+      status: "OK_FAIXAS",
+      faixas: [
+        { rotulo: "Baixo peso", percentual: 0 },
+        { rotulo: "Adequado", percentual: 100 },
+        { rotulo: "Sobrepeso", percentual: 0 },
+        { rotulo: "Obesidade", percentual: 0 },
       ],
     });
   });
