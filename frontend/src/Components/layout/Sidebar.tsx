@@ -1,6 +1,6 @@
 import { NavLink } from "react-router-dom";
 import styled from "styled-components";
-import { LayoutDashboard, ClipboardList, Users, ScrollText, Gauge, type LucideIcon } from "lucide-react";
+import { LayoutDashboard, ClipboardList, Users, ScrollText, Gauge, BarChart3, type LucideIcon } from "lucide-react";
 import { Logo } from "../ui/Logo.js";
 import { UsuarioCard } from "./UsuarioCard.js";
 import { useAuth } from "../../App/auth/useAuth.js";
@@ -18,6 +18,7 @@ const NAV: { grupo: string; itens: ItemNav[] }[] = [
     itens: [
       { to: "/", rotulo: "Dashboard", Icon: LayoutDashboard },
       { to: "/pesquisas", rotulo: "Pesquisas", Icon: ClipboardList },
+      { to: "/painel-indicadores", rotulo: "Painel de indicadores", Icon: BarChart3 },
     ],
   },
   {
