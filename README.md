@@ -188,6 +188,25 @@ publicada. O script é idempotente.
    docker compose -f docker-compose.prod.yml --env-file .env.prod restart api
    ```
 
+#### Importar os indicadores da planilha (uma vez)
+
+1. Exporte a planilha "Exportação Indicadores" do Google Sheets como `.xlsx` e copie para a VM
+   (ex.: `/tmp/indicadores.xlsx`). **Não** coloque o arquivo dentro do repositório: ele tem
+   e-mails pessoais na coluna "Usuario" (o importador não lê essa coluna).
+2. Rode, passando o arquivo para dentro do contêiner:
+
+   ```bash
+   docker compose -f docker-compose.prod.yml --env-file .env.prod --profile seed run --rm \
+     -v /tmp/indicadores.xlsx:/tmp/indicadores.xlsx:ro seed npx tsx scripts/importar-indicadores.ts /tmp/indicadores.xlsx
+   ```
+
+3. Confira a saída: a primeira linha deve ser "110 lidas · …". Saída vazia = o script não rodou.
+   Rodar de novo é seguro: indicadores já importados (e já revisados) não são tocados.
+4. Reinicie a API: `docker compose -f docker-compose.prod.yml --env-file .env.prod restart api`.
+5. Os indicadores aparecem em **Indicadores** (menu Administração) como "Para revisar".
+   Nenhum número aparece no sistema até alguém ativar o indicador.
+6. Apague o arquivo da VM: `rm /tmp/indicadores.xlsx`.
+
 Gere os segredos com algo como `node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"`.
 `SEED_PASSWORD` precisa atender à política de senha — o seed recusa senha fraca em produção.
 
