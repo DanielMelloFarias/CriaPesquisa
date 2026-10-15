@@ -33,6 +33,24 @@ describe("sugerirPergunta", () => {
       .toEqual({ situacao: "PAR", antesId: "crasA", aposId: "crasD" }));
   it("ambígua quando cita duas perguntas parecidas", () =>
     expect(sugerirPergunta("Nos últimos três meses, você alimentos dinheiro que", P).situacao).toBe("AMBIGUA"));
+  // Janela de empate (0,05): D tem 10 palavras com 3+ letras.
+  const D = "alfa bravo carlos delta eco foxtrote golfe hotel india julia";
+  it("quase empate dentro da janela de 0,05 -> ambígua", () => {
+    // Q1: 9 das 10 palavras de D -> 9/10 = 0,900. Q2: D + "kilo" -> 10/11 = 0,909. Diferença 0,009 (< 0,05).
+    const Q: PerguntaCandidata[] = [
+      { id: "q1", enunciado: "alfa bravo carlos delta eco foxtrote golfe hotel india", tipo: "ESCOLHA_UNICA" },
+      { id: "q2", enunciado: `${D} kilo`, tipo: "ESCOLHA_UNICA" },
+    ];
+    expect(sugerirPergunta(D, Q)).toEqual({ situacao: "AMBIGUA", candidatas: ["q2", "q1"] });
+  });
+  it("segunda colocada >= 0,5 mas fora da janela -> única", () => {
+    // Q2: D + "kilo" -> 10/11 = 0,909. Q3: 6 das 10 palavras de D -> 6/10 = 0,600. Diferença 0,309 (> 0,05), ambas >= 0,5.
+    const Q: PerguntaCandidata[] = [
+      { id: "q3", enunciado: "alfa bravo carlos delta eco foxtrote", tipo: "ESCOLHA_UNICA" },
+      { id: "q2", enunciado: `${D} kilo`, tipo: "ESCOLHA_UNICA" },
+    ];
+    expect(sugerirPergunta(D, Q)).toEqual({ situacao: "UNICA", perguntaId: "q2" });
+  });
   it("nenhuma abaixo de 0,5", () => {
     expect(sugerirPergunta("Benefícios federais recebidos", P)).toEqual({ situacao: "NENHUMA" });
     // semelhança 0,33 com "Renda mensal total da família": parcial, mas abaixo do limiar

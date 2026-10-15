@@ -48,7 +48,7 @@ export function sugerirPergunta(descricao: string | null | undefined, perguntas:
     .sort((x, y) => y.s - x.s);
   const melhor = ordenadas[0];
   if (!melhor || melhor.s < LIMIAR) return { situacao: "NENHUMA" };
-  const topo = ordenadas.filter((c) => c.s >= melhor.s - EMPATE).map((c) => c.p);
+  const topo = ordenadas.filter((c) => c.s > melhor.s - EMPATE).map((c) => c.p);
   if (topo.length === 1) return { situacao: "UNICA", perguntaId: topo[0].id };
   if (topo.length === 2 && normalizar(topo[0].enunciado) === normalizar(topo[1].enunciado)) {
     const antes = topo.find((p) => /ANTES/i.test(p.enunciado));
