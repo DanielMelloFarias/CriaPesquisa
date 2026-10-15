@@ -645,3 +645,86 @@ describe("ESCALA no calcular", () => {
     expect(calcular([cpre], respostas, PERGUNTAS).get("cpre")).toEqual({ status: "OK", valor: 100 });
   });
 });
+
+/**
+ * ZSCORE à mão. X = [10, 20, 30] (média 20, desvio 10) -> z = [-1, 0, 1].
+ * Y = [5, 5, 20] (média 10, desvio √75 = 8.660254) -> z = [-0.577350, -0.577350, 1.154701].
+ * Índice (pesos iguais) = média dos z = [-0.788675, -0.288675, 1.077350]; média geral = 0.
+ * Com a máscara só na 3ª resposta, o recorte vale 1.08 — a referência continua sendo as três.
+ */
+describe("ZSCORE", () => {
+  const P = new Set(["x", "y"]);
+  const base = [
+    ind({ id: "x", tipo: "MEDIA", config: { perguntaId: "x" } }),
+    ind({ id: "y", tipo: "MEDIA", config: { perguntaId: "y" } }),
+    ind({ id: "ise", tipo: "ZSCORE", config: { componentes: [{ indicadorId: "x", peso: 1 }, { indicadorId: "y", peso: 1 }] } }),
+  ];
+  const r = (id: string, x: number | null, y: number) =>
+    montarResposta(id, [...(x === null ? [] : [{ perguntaId: "x", valorNumero: x }]), { perguntaId: "y", valorNumero: y }]);
+  const tres = [r("a", 10, 5), r("b", 20, 5), r("c", 30, 20)];
+
+  it("média geral da referência é zero", () => {
+    // Soma de ponto flutuante pode dar -0 ou 1e-17: confere o valor com tolerância, não com toEqual.
+    const r = calcular(base, tres, P).get("ise") as { status: string; valor: number };
+    expect(r.status).toBe("OK");
+    expect(Math.abs(r.valor)).toBeLessThan(0.005);
+  });
+
+  it("recorte filtrado compara com a pesquisa inteira", () => {
+    expect(calcular(base, tres, P, [false, false, true]).get("ise")).toEqual({ status: "OK", valor: 1.08 });
+  });
+
+  it("indivíduo sem um componente fica fora, e sai da referência daquele componente", () => {
+    // X só tem a e c: [10, 30] -> média 20, desvio √200; z_a = -0.707107, z_c = 0.707107.
+    // Y das três: z como acima. b não tem X -> null. Índice: a = (-0.707107 - 0.577350)/2, c = (0.707107 + 1.154701)/2.
+    const res = calcular(base, [r("a", 10, 5), r("b", null, 5), r("c", 30, 20)], P).get("ise");
+    const esperado = ((-0.707107 - 0.57735) / 2 + (0.707107 + 1.154701) / 2) / 2;
+    expect(res).toEqual({ status: "OK", valor: Math.round(esperado * 100) / 100 });
+  });
+
+  it("referência pequena = SEM_DADOS", () => {
+    expect(calcular(base, [r("a", 10, 5)], P).get("ise")).toEqual({ status: "SEM_DADOS" });
+  });
+
+  it("ZSCORE como termo de COMPOSTO ou fonte de CLASSIFICACAO = INCOMPLETO", () => {
+    const comp = ind({ id: "c", tipo: "COMPOSTO", config: { termos: [{ indicadorId: "ise", peso: 1 }], divisor: 1 } });
+    const cls = ind({ id: "k", tipo: "CLASSIFICACAO", config: { indicadorId: "ise", faixas: [{ rotulo: "a", de: -5, ate: 5 }] } });
+    const res = calcular([...base, comp, cls], tres, P);
+    expect(res.get("c")).toEqual({ status: "INCOMPLETO", motivo: "depende de ise, que não está em 0–100", dependencia: "ise" });
+    expect(res.get("k")).toEqual({ status: "INCOMPLETO", motivo: "depende de ise, que não está em 0–100", dependencia: "ise" });
+  });
+
+  /**
+   * Pareado: cada cenário padroniza contra a referência do mesmo cenário.
+   * ANTES X = [10, 20, 30] (média 20, desvio 10): z_c = 1 -> recorte só em c = 1.
+   * APÓS  X = [30, 30, 60] (média 40, desvio √300 = 17.320508): z_c = 20/17.320508 = 1.154701 -> 1.15.
+   * Com a referência do ANTES no APÓS, z_c seria (60 − 20)/10 = 4.
+   */
+  it("pareado: cada cenário padroniza contra a referência do próprio cenário", () => {
+    const PP = new Set(["xA", "xD"]);
+    const indicadores = [
+      ind({
+        id: "x",
+        tipo: "MEDIA",
+        config: { perguntaId: "xA" },
+        recorte: "ANTES_APOS",
+        recorteConfig: { substituicoes: [{ de: "xA", para: "xD" }] },
+      }),
+      ind({ id: "ise", tipo: "ZSCORE", config: { componentes: [{ indicadorId: "x", peso: 1 }] } }),
+    ];
+    const respostas = [
+      [10, 30],
+      [20, 30],
+      [30, 60],
+    ].map(([a, d], i) =>
+      montarResposta(String(i), [
+        { perguntaId: "xA", valorNumero: a },
+        { perguntaId: "xD", valorNumero: d },
+      ]),
+    );
+    expect(calcular(indicadores, respostas, PP, [false, false, true]).get("ise")).toEqual({
+      antes: { status: "OK", valor: 1 },
+      apos: { status: "OK", valor: 1.15 },
+    });
+  });
+});

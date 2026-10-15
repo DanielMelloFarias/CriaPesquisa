@@ -8,6 +8,7 @@ import {
 import { ordenarPorDependencia } from "../dependencias.js";
 import { avaliar, opcaoSemNota } from "./avaliadores.js";
 import { agregar, classificar, agregarDistribuicao, type ResultadoIndicador } from "./agregacao.js";
+import { estatisticas } from "./padronizacao.js";
 import type { RespostaAvaliavel, ValorIndividual } from "./tipos.js";
 
 /**
@@ -207,6 +208,16 @@ export function calcular(
       continue;
     }
 
+    // 5c. ZSCORE não está em 0–100: somá-lo num COMPOSTO ou classificá-lo em faixas
+    //     de 0–100 daria número plausível e errado.
+    if (config.tipo === "COMPOSTO" || config.tipo === "CLASSIFICACAO") {
+      const zDep = dependencias.find((dep) => porId.get(dep)!.tipo === "ZSCORE");
+      if (zDep) {
+        marcarIncompleto(id, `depende de ${zDep}, que não está em 0–100`, id, zDep);
+        continue;
+      }
+    }
+
     // 6. Recorte ANTES/APÓS: o par precisa existir de fato.
     const pareado = indicador.recorte === "ANTES_APOS";
     const depPareada = dependencias.find((dep) => valoresApos.has(dep));
@@ -243,8 +254,31 @@ export function calcular(
     const noEscopo = daPesquisa.map((dentro, i) => dentro && mascara[i] === true);
 
     const calcularCenario = (cfg: ConfigIndicador, lerValores: LerValores) => {
+      // ZSCORE: a referência de cada componente é a pesquisa inteira do indicador
+      // (daPesquisa), nunca a máscara do painel — senão a média do recorte seria zero.
+      // `lerValores` é o do cenário: no pareado, o APÓS padroniza contra o APÓS.
+      const referencias =
+        cfg.tipo === "ZSCORE"
+          ? cfg.componentes.map((c) => {
+              const vetor = lerValores(c.indicadorId) ?? [];
+              const base = vetor.filter((v, i): v is number => daPesquisa[i] && v !== null && Number.isFinite(v));
+              return { ...c, vetor, est: estatisticas(base) };
+            })
+          : null;
+
       const valores = respostas.map((resposta, indice) => {
         if (!daPesquisa[indice]) return null;
+        if (referencias) {
+          let soma = 0;
+          let pesos = 0;
+          for (const c of referencias) {
+            const v = c.vetor[indice];
+            if (!c.est || v === null || v === undefined) return null;
+            soma += ((v - c.est.media) / c.est.desvio) * c.peso;
+            pesos += c.peso;
+          }
+          return soma / pesos;
+        }
         const deps = new Map<string, ValorIndividual>();
         for (const depId of dependencias) {
           // Posição, não busca: o valor do MCC da criança i está em valores[i].
