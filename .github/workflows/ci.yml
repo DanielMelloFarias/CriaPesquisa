@@ -58,6 +58,14 @@ jobs:
       - name: Aplicar migrations
         run: npx prisma migrate deploy
 
+      # Os testes da importação de indicadores usam as pesquisas reais do Cartão
+      # CRIA (Criança/Gestante), que vêm do seed. Senha descartável, só da CI,
+      # mas dentro da política, caso o seed rode com NODE_ENV=production.
+      - name: Seed
+        run: npm run seed
+        env:
+          SEED_PASSWORD: ci-descartavel-Vq7mT2xLp9
+
       - name: Testes
         run: npm test
 

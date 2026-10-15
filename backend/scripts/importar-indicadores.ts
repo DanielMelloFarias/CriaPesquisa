@@ -25,6 +25,15 @@ export type ResumoImportacao = {
   jaExistiam: number;
   porSituacao: Record<Situacao, string[]>;
   auxiliares: number;
+  semId: number[]; // números das linhas do Cartão CRIA sem ID (puladas)
+};
+
+export type OpcoesImportacao = {
+  /**
+   * Só para testes: prefixa todo código gravado e todo id da planilha (ao gravar
+   * e ao conferir o que já existe), isolando o teste dos dados reais do banco.
+   */
+  prefixo?: string;
 };
 
 const TITULOS = {
@@ -58,9 +67,21 @@ function dependenciasDe(tipo: TipoIndicador, config: unknown): string[] {
 
 const vazioParaUndefined = (s: string | undefined) => (s && s.trim() ? s : undefined);
 
-export async function importarIndicadores(caminho: string, usuarioId: string): Promise<ResumoImportacao> {
+/** "Fórmula de Cálculo — Fórmula Descritiva", o que houver. */
+const formulaOriginal = (l: LinhaPlanilha | undefined) =>
+  vazioParaUndefined([l?.formulaCalculo, l?.formulaDescritiva].filter(Boolean).join(" — "));
+
+export async function importarIndicadores(
+  caminho: string,
+  usuarioId: string,
+  opcoes: OpcoesImportacao = {},
+): Promise<ResumoImportacao> {
+  const P = opcoes.prefixo ?? "";
+
   // 1. Se a planilha não confere, para aqui: nada foi gravado.
-  const linhas = await lerPlanilha(caminho);
+  const lidas = await lerPlanilha(caminho);
+  const semId = lidas.filter((l) => !l.id).map((l) => l.numeroLinha);
+  const linhas = lidas.filter((l) => l.id);
   const porId = new Map(linhas.map((l) => [l.id, l]));
 
   // 2. Estado do banco.
@@ -84,11 +105,12 @@ export async function importarIndicadores(caminho: string, usuarioId: string): P
   const codigosExistentes = await indicadorModel.codigosExistentes();
 
   const resumo: ResumoImportacao = {
-    lidas: linhas.length,
+    lidas: lidas.length,
     importadas: 0,
     jaExistiam: 0,
     porSituacao: { DEFINICAO_PRONTA: [], PERGUNTA_SUGERIDA: [], AMBIGUA: [], SEM_CANDIDATA: [], SEM_DESCRICAO: [] },
     auxiliares: 0,
+    semId,
   };
 
   const gravar = async (
@@ -116,12 +138,14 @@ export async function importarIndicadores(caminho: string, usuarioId: string): P
   const consumidos = new Set<string>(DEFINICOES.flatMap((d) => d.idsPlanilha));
 
   for (const def of DEFINICOES) {
-    if (codigosExistentes.has(def.codigo) || def.idsPlanilha.some((id) => idsExistentes.has(id))) {
+    const codigoDef = P + def.codigo;
+    const idsDef = def.idsPlanilha.map((id) => P + id);
+    if (codigosExistentes.has(codigoDef) || idsDef.some((id) => idsExistentes.has(id))) {
       resumo.jaExistiam++;
       const existente = await prisma.indicador.findFirst({
         where: {
           deletedAt: null,
-          OR: [{ codigo: def.codigo }, ...(def.idsPlanilha.length ? [{ idsPlanilha: { hasSome: def.idsPlanilha } }] : [])],
+          OR: [{ codigo: codigoDef }, ...(idsDef.length ? [{ idsPlanilha: { hasSome: idsDef } }] : [])],
         },
         orderBy: { createdAt: "asc" },
         select: { id: true, codigo: true },
@@ -141,7 +165,7 @@ export async function importarIndicadores(caminho: string, usuarioId: string): P
     const motivo = [def.motivo, ...faltando].join("; ");
     return gravar(
       {
-        codigo: def.codigo,
+        codigo: P + def.codigo,
         nome: def.nome,
         objetivo: vazioParaUndefined(linha?.objetivo),
         tipo: def.tipo,
@@ -151,22 +175,22 @@ export async function importarIndicadores(caminho: string, usuarioId: string): P
         config,
         recorte: recorteConfig ? "ANTES_APOS" : undefined,
         recorteConfig,
-        formulaOriginal: vazioParaUndefined(linha?.formulaCalculo),
+        formulaOriginal: formulaOriginal(linha),
         apresentacao: def.apresentacao ?? linha?.apresentacao,
         categoria: vazioParaUndefined(linha?.categoria),
         status: "DEFINICAO_INCOMPLETA",
         motivoIncompleto: motivo,
       },
       dependenciasDe(def.tipo, config),
-      { idsPlanilha: def.idsPlanilha, dadosPlanilha: linha ? dadosPlanilha(linha) : {} },
+      { idsPlanilha: def.idsPlanilha.map((id) => P + id), dadosPlanilha: linha ? dadosPlanilha(linha) : {} },
     );
   }
 
   // 4. Linhas que o mapa não cobre: sugestão de pergunta e de tipo.
   for (const linha of linhas) {
     if (consumidos.has(linha.id)) continue;
-    const codigo = `${PREFIXO[linha.projeto]}${linha.id}`;
-    if (idsExistentes.has(linha.id) || codigosExistentes.has(codigo)) {
+    const codigo = `${P}${PREFIXO[linha.projeto]}${linha.id}`;
+    if (idsExistentes.has(P + linha.id) || codigosExistentes.has(codigo)) {
       resumo.jaExistiam++;
       continue;
     }
@@ -198,7 +222,7 @@ export async function importarIndicadores(caminho: string, usuarioId: string): P
         situacao = "PERGUNTA_SUGERIDA";
         motivo = comTipo
           ? `pergunta sugerida: ${pergunta!.enunciado} — conferir tipo e opções`
-          : `pergunta sugerida: ${pergunta!.enunciado} — definir tipo e pergunta`;
+          : `pergunta sugerida: ${pergunta!.enunciado} — definir tipo`;
         break;
       case "AMBIGUA":
         situacao = "AMBIGUA";
@@ -228,14 +252,14 @@ export async function importarIndicadores(caminho: string, usuarioId: string): P
         config,
         recorte: recorteConfig ? "ANTES_APOS" : undefined,
         recorteConfig,
-        formulaOriginal: vazioParaUndefined(linha.formulaCalculo),
+        formulaOriginal: formulaOriginal(linha),
         apresentacao: linha.apresentacao,
         categoria: vazioParaUndefined(linha.categoria),
         status: "DEFINICAO_INCOMPLETA",
         motivoIncompleto: motivo,
       },
       [],
-      { idsPlanilha: [linha.id], dadosPlanilha: dadosPlanilha(linha) },
+      { idsPlanilha: [P + linha.id], dadosPlanilha: dadosPlanilha(linha) },
     );
     resumo.porSituacao[situacao].push(linha.id);
   }
@@ -258,6 +282,7 @@ export function formatarResumo(r: ResumoImportacao): string {
     `ambígua: ${lista(r.porSituacao.AMBIGUA)}`,
     `sem candidata: ${lista(r.porSituacao.SEM_CANDIDATA)}`,
     `sem descrição: ${lista(r.porSituacao.SEM_DESCRICAO)}`,
+    `sem ID: ${lista(r.semId.map(String))}`,
   ].join("\n");
 }
 

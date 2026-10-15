@@ -15,7 +15,8 @@ export const PROJETOS = ["Cartão CRIA (Criança)", "Cartão CRIA (Gestante)"] a
 export type ProjetoPlanilha = (typeof PROJETOS)[number];
 
 export type LinhaPlanilha = {
-  id: string;
+  id: string; // "" quando a célula está vazia: o importador pula e lista a linha
+  numeroLinha: number; // linha na planilha (o cabeçalho é a 1)
   projeto: ProjetoPlanilha;
   nome: string;
   formulaDescritiva: string;
@@ -78,6 +79,7 @@ export async function lerPlanilha(caminho: string): Promise<LinhaPlanilha[]> {
     if (!ehProjetoCartaoCria(projeto)) continue;
     linhas.push({
       id: texto(row, COL.id),
+      numeroLinha: n,
       projeto,
       nome: texto(row, COL.nome),
       formulaDescritiva: texto(row, COL.formulaDescritiva),
