@@ -1,4 +1,5 @@
 import type { ConfigIndicador, NoExpressao } from "../indicadorConfig.js";
+import { mesesCompletos } from "./idade.js";
 import type { ItemAvaliavel, RespostaAvaliavel, ValorIndividual } from "./tipos.js";
 
 export type { ItemAvaliavel, RespostaAvaliavel, ValorIndividual };
@@ -60,6 +61,19 @@ function avaliarExpressao(no: NoExpressao, valores: Map<string, number>): number
   }
 }
 
+/** Primeira opção marcada que a escala não conhece; null se todas têm nota (ou são "fora"). */
+export function opcaoSemNota(
+  config: Extract<ConfigIndicador, { tipo: "ESCALA" }>,
+  respostas: RespostaAvaliavel[],
+): string | null {
+  for (const resposta of respostas) {
+    for (const opcao of opcoes(resposta.itens.get(config.perguntaId))) {
+      if (!Object.hasOwn(config.notas, opcao)) return opcao;
+    }
+  }
+  return null;
+}
+
 export function avaliar(
   config: ConfigIndicador,
   resposta: RespostaAvaliavel,
@@ -118,6 +132,25 @@ export function avaliar(
         soma += valor * termo.peso;
       }
       return finitoOuNulo(soma / config.divisor);
+    }
+
+    case "ESCALA": {
+      const selecionadas = opcoes(resposta.itens.get(config.perguntaId));
+      if (selecionadas.length !== 1) return null;
+      const nota = config.notas[selecionadas[0]];
+      // undefined = opção sem nota: o calcular marca o indicador INCOMPLETO antes de agregar.
+      return nota === undefined ? null : nota;
+    }
+
+    case "META_POR_IDADE": {
+      const consultas = resposta.itens.get(config.perguntaId);
+      const nascimento = resposta.itens.get(config.nascimentoPerguntaId)?.valorData;
+      if (!temNumero(consultas) || !nascimento || !resposta.enviadaEm) return null;
+      const meses = mesesCompletos(nascimento, resposta.enviadaEm);
+      if (meses < 0) return null;
+      const faixa = config.faixas.find((f) => meses >= f.deMeses && (f.ateMeses === null || meses < f.ateMeses));
+      if (!faixa) return null;
+      return Math.min(100, (consultas.valorNumero / faixa.esperado) * 100);
     }
 
     // CLASSIFICACAO, CONTAGEM e DISTRIBUICAO não produzem valor individual:

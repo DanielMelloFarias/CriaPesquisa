@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { montarResposta, avaliar, ItemDuplicado } from "../src/helper/motor/avaliadores.js";
+import { montarResposta, avaliar, opcaoSemNota, ItemDuplicado } from "../src/helper/motor/avaliadores.js";
 import { validarConfig } from "../src/helper/indicadorConfig.js";
 
 const vazio = new Map<string, number | null>();
@@ -127,5 +127,72 @@ describe("montarResposta", () => {
         { perguntaId: "p1", valorNumero: 2 },
       ]),
     ).toThrow(ItemDuplicado);
+  });
+});
+
+describe("ESCALA", () => {
+  const cfg = validarConfig("ESCALA", {
+    perguntaId: "pn",
+    notas: { "Antes de 12": 100, "Após 12": 50, "Sem pré-natal": 0, "Não soube": null },
+  });
+  const r = (op?: string[]) => montarResposta("r", op ? [{ perguntaId: "pn", opcoesSelecionadas: op }] : []);
+  it("nota da opção", () => {
+    expect(avaliar(cfg, r(["Antes de 12"]), new Map())).toBe(100);
+    expect(avaliar(cfg, r(["Após 12"]), new Map())).toBe(50);
+    expect(avaliar(cfg, r(["Sem pré-natal"]), new Map())).toBe(0);
+  });
+  it("opção com nota null, branco ou marcação múltipla = fora", () => {
+    expect(avaliar(cfg, r(["Não soube"]), new Map())).toBeNull();
+    expect(avaliar(cfg, r(), new Map())).toBeNull();
+    expect(avaliar(cfg, r([]), new Map())).toBeNull();
+    expect(avaliar(cfg, r(["Antes de 12", "Após 12"]), new Map())).toBeNull();
+  });
+  it("opção desconhecida não vira número (o calcular marca INCOMPLETO)", () => {
+    expect(avaliar(cfg, r(["Opção nova"]), new Map())).toBeNull();
+    expect(opcaoSemNota(cfg as never, [r(["Antes de 12"]), r(["Opção nova"])])).toBe("Opção nova");
+    expect(opcaoSemNota(cfg as never, [r(["Antes de 12"]), r(["Não soube"])])).toBeNull();
+  });
+});
+
+describe("META_POR_IDADE", () => {
+  const cfg = validarConfig("META_POR_IDADE", {
+    perguntaId: "consultas",
+    nascimentoPerguntaId: "nasc",
+    faixas: [
+      { deMeses: 0, ateMeses: 12, esperado: 7 },
+      { deMeses: 12, ateMeses: 24, esperado: 2 },
+      { deMeses: 24, ateMeses: null, esperado: 1 },
+    ],
+  });
+  const entrevista = new Date("2026-01-01T12:00:00Z");
+  const r = (nasc: string | null, consultas: number | null, enviadaEm: Date | null = entrevista) =>
+    montarResposta(
+      "r",
+      [
+        ...(nasc ? [{ perguntaId: "nasc", valorData: new Date(nasc) }] : []),
+        ...(consultas !== null ? [{ perguntaId: "consultas", valorNumero: consultas }] : []),
+      ],
+      null,
+      { enviadaEm },
+    );
+  it("proporcional ao esperado da faixa, teto 100", () => {
+    expect(avaliar(cfg, r("2025-07-01", 4), new Map())).toBeCloseTo(400 / 7, 10); // 6 meses: 4 de 7
+    expect(avaliar(cfg, r("2024-07-01", 2), new Map())).toBe(100); // 18 meses: 2 de 2
+    expect(avaliar(cfg, r("2023-07-01", 3), new Map())).toBe(100); // 30 meses: teto
+  });
+  it("zero consultas é zero, não branco", () => {
+    expect(avaliar(cfg, r("2023-07-01", 0), new Map())).toBe(0);
+  });
+  it("sem nascimento, sem consultas, sem data da entrevista ou idade negativa = null", () => {
+    expect(avaliar(cfg, r(null, 3), new Map())).toBeNull();
+    expect(avaliar(cfg, r("2025-07-01", null), new Map())).toBeNull();
+    expect(avaliar(cfg, r("2025-07-01", 3, null), new Map())).toBeNull();
+    expect(avaliar(cfg, r("2026-06-01", 3), new Map())).toBeNull();
+  });
+  it("idade fora de todas as faixas = null", () => {
+    const fechada = validarConfig("META_POR_IDADE", {
+      perguntaId: "consultas", nascimentoPerguntaId: "nasc", faixas: [{ deMeses: 0, ateMeses: 12, esperado: 7 }],
+    });
+    expect(avaliar(fechada, r("2024-07-01", 2), new Map())).toBeNull();
   });
 });

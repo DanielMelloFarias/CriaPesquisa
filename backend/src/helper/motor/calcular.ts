@@ -6,7 +6,7 @@ import {
   type TipoIndicador,
 } from "../indicadorConfig.js";
 import { ordenarPorDependencia } from "../dependencias.js";
-import { avaliar } from "./avaliadores.js";
+import { avaliar, opcaoSemNota } from "./avaliadores.js";
 import { agregar, classificar, agregarDistribuicao, type ResultadoIndicador } from "./agregacao.js";
 import type { RespostaAvaliavel, ValorIndividual } from "./tipos.js";
 
@@ -53,6 +53,10 @@ function aplicarSubstituicoes(config: ConfigIndicador, substituicoes: Substituic
       return { ...config, perguntaId: trocar(config.perguntaId) };
     case "CRUZAMENTO":
       return { ...config, condicoes: config.condicoes.map((c) => ({ ...c, perguntaId: trocar(c.perguntaId) })) };
+    case "ESCALA":
+      return { ...config, perguntaId: trocar(config.perguntaId) };
+    case "META_POR_IDADE":
+      return { ...config, perguntaId: trocar(config.perguntaId), nascimentoPerguntaId: trocar(config.nascimentoPerguntaId) };
     case "DERIVADA":
       return {
         ...config,
@@ -155,6 +159,21 @@ export function calcular(
       continue;
     }
 
+    // Fora da pesquisa do indicador vale como branco. A avaliação usa `daPesquisa`
+    // (a referência do ZSCORE é a pesquisa inteira); a agregação usa `noEscopo`,
+    // que também respeita a máscara do painel.
+    const daPesquisa = respostas.map((r) => indicador.pesquisaId == null || r.pesquisaId === indicador.pesquisaId);
+
+    // 3b. Escala que não conhece uma opção marcada: a pergunta ganhou opção depois
+    //     do cadastro. Tratar como branco tiraria gente do denominador em silêncio.
+    if (config.tipo === "ESCALA") {
+      const semNota = opcaoSemNota(config, respostas.filter((_, i) => daPesquisa[i]));
+      if (semNota) {
+        marcarIncompleto(id, `opção "${semNota}" sem nota na escala`, id);
+        continue;
+      }
+    }
+
     // 4. Dependência fora do conjunto calculado (inativa, apagada): sem ela não há número.
     const dependencias = indicadoresReferenciados(config);
     const ausente = dependencias.find((dep) => !porId.has(dep));
@@ -221,10 +240,6 @@ export function calcular(
       }
     }
 
-    // Fora da pesquisa do indicador vale como branco. A avaliação usa `daPesquisa`
-    // (a referência do ZSCORE é a pesquisa inteira); a agregação usa `noEscopo`,
-    // que também respeita a máscara do painel.
-    const daPesquisa = respostas.map((r) => indicador.pesquisaId == null || r.pesquisaId === indicador.pesquisaId);
     const noEscopo = daPesquisa.map((dentro, i) => dentro && mascara[i] === true);
 
     const calcularCenario = (cfg: ConfigIndicador, lerValores: LerValores) => {

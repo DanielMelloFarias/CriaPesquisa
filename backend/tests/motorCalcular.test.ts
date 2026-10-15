@@ -618,3 +618,30 @@ describe("máscara do painel não muda número de tipo antigo (Review Focus 1)",
     expect(comMascara.get("faixasMcc")).toHaveProperty("apos");
   });
 });
+
+describe("ESCALA no calcular", () => {
+  it("opção marcada sem nota vira INCOMPLETO, não zero", () => {
+    const cpre = ind({ id: "cpre", tipo: "ESCALA", config: { perguntaId: "cras", notas: { Sim: 100, "Não": 0 } } });
+    const respostas = [
+      montarResposta("a", [{ perguntaId: "cras", opcoesSelecionadas: ["Sim"] }]),
+      montarResposta("b", [{ perguntaId: "cras", opcoesSelecionadas: ["Talvez"] }]),
+    ];
+    expect(calcular([cpre], respostas, PERGUNTAS).get("cpre")).toEqual({
+      status: "INCOMPLETO",
+      motivo: 'opção "Talvez" sem nota na escala',
+    });
+  });
+  it("média das notas", () => {
+    const cpre = ind({ id: "cpre", tipo: "ESCALA", config: { perguntaId: "cras", notas: { Sim: 100, "Não": 50, Talvez: null } } });
+    const respostas = ["Sim", "Não", "Talvez"].map((o, i) => montarResposta(String(i), [{ perguntaId: "cras", opcoesSelecionadas: [o] }]));
+    expect(calcular([cpre], respostas, PERGUNTAS).get("cpre")).toEqual({ status: "OK", valor: 75 });
+  });
+  it("opção sem nota em resposta de outra pesquisa não trava o indicador", () => {
+    const cpre = ind({ id: "cpre", tipo: "ESCALA", pesquisaId: "P1", config: { perguntaId: "cras", notas: { Sim: 100 } } });
+    const respostas = [
+      montarResposta("a", [{ perguntaId: "cras", opcoesSelecionadas: ["Sim"] }], "P1"),
+      montarResposta("b", [{ perguntaId: "cras", opcoesSelecionadas: ["Talvez"] }], "P2"),
+    ];
+    expect(calcular([cpre], respostas, PERGUNTAS).get("cpre")).toEqual({ status: "OK", valor: 100 });
+  });
+});
