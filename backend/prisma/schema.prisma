@@ -291,7 +291,15 @@ model Indicador {
   formulaOriginal String?
   status         StatusIndicador   @default(DEFINICAO_INCOMPLETA)
   motivoIncompleto String?
-  origemPlanilha Int?
+  // Origem na planilha "Exportação Indicadores" (importação única). Lista porque
+  // linhas de classificação da mesma faixa viram um indicador só.
+  idsPlanilha   String[] @default([])
+  // Texto da planilha mostrado na tela de revisão (sem colunas pessoais).
+  dadosPlanilha Json?
+  // Agrupamento do painel: "Escopo" e/ou "Perfil".
+  apresentacao  String[] @default([])
+  // Coluna "Tipo de Indicador" da planilha: categoria temática, não tipo de cálculo.
+  categoria     String?
   createdById    String?
   updatedById    String?
   deletedAt      DateTime?

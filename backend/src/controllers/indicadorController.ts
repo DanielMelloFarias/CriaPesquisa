@@ -31,6 +31,13 @@ function conferirConfig(tipo: CriarIndicadorInput["tipo"], config: unknown): str
  */
 const statusSchema = z.enum(["ATIVO", "DEFINICAO_INCOMPLETA", "INATIVO"]);
 
+const filtrosListagem = z.object({
+  status: statusSchema.optional(),
+  pesquisaId: z.string().uuid().optional(),
+  apresentacao: z.enum(["Escopo", "Perfil"]).optional(),
+  q: z.string().trim().min(1).max(100).optional(),
+});
+
 /** Recusa (422) dependência para indicador inexistente/apagado e pesquisa inexistente, antes de gravar. */
 async function conferirReferencias(dependencias: string[], pesquisaId?: string): Promise<void> {
   const unicas = [...new Set(dependencias)];
@@ -73,6 +80,21 @@ async function conferirPerguntas(tipo: CriarIndicadorInput["tipo"], config: unkn
   }
 }
 
+/**
+ * Indicador ATIVO com recorte ANTES/APÓS: cada `de` precisa ser pergunta da config.
+ * Vale para qualquer tipo (inclusive os que não passam por `conferirPerguntas`); do
+ * contrário a troca não tem efeito e o cenário APÓS sairia igual ao ANTES, em silêncio.
+ */
+function conferirRecorteCompativel(tipo: CriarIndicadorInput["tipo"], config: unknown, recorteConfig?: unknown): void {
+  const substituicoes = recorteConfigSchema.safeParse(recorteConfig);
+  if (!substituicoes.success || substituicoes.data.substituicoes.length === 0) return;
+  const referenciadas = new Set(perguntasReferenciadas(validarConfig(tipo, config)));
+  const incompativeis = substituicoes.data.substituicoes.map((s) => s.de).filter((de) => !referenciadas.has(de));
+  if (incompativeis.length > 0) {
+    throw new HttpError(422, "RECORTE_INCOMPATIVEL", "Recorte troca pergunta que o indicador não usa", { incompativeis });
+  }
+}
+
 /** Traduz violação de unicidade do `codigo` em 409; demais erros seguem. */
 function traduzirErroDeGravacao(erro: unknown): never {
   if (erro instanceof Prisma.PrismaClientKnownRequestError && erro.code === "P2002") {
@@ -95,10 +117,18 @@ async function conferirCiclo(id: string, dependencias: string[]): Promise<void> 
 }
 
 export async function listar(req: Request, res: Response) {
-  const status = req.query.status === undefined ? undefined : statusSchema.parse(req.query.status);
+  const filtros = filtrosListagem.parse({
+    status: req.query.status,
+    pesquisaId: req.query.pesquisaId,
+    apresentacao: req.query.apresentacao,
+    q: req.query.q,
+  });
   const { page, pageSize } = parsePaginacao(req.query, 50);
-  const { total, itens } = await indicadorModel.listar({ status, page, pageSize });
-  res.json({ total, page, pageSize, itens });
+  const [{ total, itens }, contadores] = await Promise.all([
+    indicadorModel.listar({ ...filtros, page, pageSize }),
+    indicadorModel.contarPorStatus(),
+  ]);
+  res.json({ total, page, pageSize, itens, contadores });
 }
 
 export async function obter(req: Request, res: Response) {
@@ -114,6 +144,7 @@ export async function criar(req: Request, res: Response) {
   const dependencias = conferirConfig(dados.tipo, dados.config);
   await conferirReferencias(dependencias, dados.pesquisaId);
   await conferirPerguntas(dados.tipo, dados.config, dados.recorteConfig);
+  if ((dados.status ?? "ATIVO") === "ATIVO") conferirRecorteCompativel(dados.tipo, dados.config, dados.recorteConfig);
   await conferirCiclo("__novo__", dependencias);
 
   const indicador = await indicadorModel.criar(dados, usuario.id, dependencias).catch(traduzirErroDeGravacao);
@@ -138,27 +169,50 @@ export async function atualizar(req: Request, res: Response) {
 
   const dados = { ...(req.body as AtualizarIndicadorInput) };
 
+  // Valor que vai ficar gravado: ausente no corpo = mantém o gravado; `null` = limpa.
+  const final = <K extends "recorte" | "recorteConfig">(campo: K) =>
+    (dados[campo] !== undefined ? dados[campo] : atual[campo]) ?? undefined;
+
   // As regras entre campos valem sobre o que vai ficar gravado, não só sobre o corpo:
   // quem manda só o status (ou só o recorte) aproveita o motivo (ou a config) já gravado.
   const statusFinal = dados.status ?? atual.status;
   regrasIndicadorMescladoSchema.parse({
     status: statusFinal,
     motivoIncompleto: dados.motivoIncompleto ?? atual.motivoIncompleto ?? undefined,
-    recorte: dados.recorte ?? atual.recorte ?? undefined,
-    recorteConfig: dados.recorteConfig ?? atual.recorteConfig ?? undefined,
+    recorte: final("recorte"),
+    recorteConfig: final("recorteConfig"),
   });
   // Motivo só descreve DEFINICAO_INCOMPLETA: fora dela, não grava sobra do corpo.
   if (statusFinal !== "DEFINICAO_INCOMPLETA") delete dados.motivoIncompleto;
 
   const tipo = dados.tipo ?? (atual.tipo as CriarIndicadorInput["tipo"]);
-  const dependencias = conferirConfig(tipo, dados.config ?? atual.config);
-  await conferirReferencias(dependencias, dados.pesquisaId);
-  // Só quando tipo/config/recorte mudam: indicador cuja pergunta ganhou opção continua
-  // editável (o motor marca INCOMPLETO). Confere o registro mesclado (gravado + corpo).
-  if (dados.tipo !== undefined || dados.config !== undefined || dados.recorteConfig !== undefined) {
-    await conferirPerguntas(tipo, dados.config ?? atual.config, dados.recorteConfig ?? atual.recorteConfig);
+  const configFinal = dados.config ?? atual.config;
+  let dependencias: string[];
+  if (statusFinal === "ATIVO") {
+    // Só o indicador ativo entra no cálculo: aqui a config precisa estar completa.
+    dependencias = conferirConfig(tipo, configFinal);
+    await conferirReferencias(dependencias, dados.pesquisaId);
+    // Só quando tipo/config/recorte mudam (ou na ativação): indicador ativo cuja pergunta
+    // ganhou opção continua editável (o motor marca INCOMPLETO). Confere o registro mesclado.
+    const ativando = atual.status !== "ATIVO";
+    if (ativando || dados.tipo !== undefined || dados.config !== undefined || dados.recorteConfig !== undefined) {
+      await conferirPerguntas(tipo, configFinal, final("recorteConfig"));
+    }
+    conferirRecorteCompativel(tipo, configFinal, final("recorteConfig"));
+    await conferirCiclo(id, dependencias);
+  } else {
+    // Rascunho ou inativo: grava a config pela metade (a revisão continua depois).
+    // Config que não valida não tem dependência; a que valida segue o caminho normal.
+    let valida: string[] | null = null;
+    try {
+      valida = conferirConfig(tipo, configFinal);
+    } catch (erro) {
+      if (!(erro instanceof z.ZodError)) throw erro;
+    }
+    dependencias = valida ?? [];
+    await conferirReferencias(dependencias, dados.pesquisaId);
+    if (valida) await conferirCiclo(id, dependencias);
   }
-  await conferirCiclo(id, dependencias);
 
   const indicador = await indicadorModel.atualizar(id, dados, usuario.id, dependencias).catch(traduzirErroDeGravacao);
   invalidarCache();

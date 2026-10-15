@@ -21,6 +21,10 @@ const ResultadosPesquisa = lazy(() =>
 const NovaPesquisa = lazy(() => import("./pages/NovaPesquisa.js").then((m) => ({ default: m.NovaPesquisa })));
 const Usuarios = lazy(() => import("./pages/Usuarios.js").then((m) => ({ default: m.Usuarios })));
 const NovoUsuario = lazy(() => import("./pages/NovoUsuario.js").then((m) => ({ default: m.NovoUsuario })));
+const Indicadores = lazy(() => import("./pages/Indicadores.js").then((m) => ({ default: m.Indicadores })));
+const RevisaoIndicador = lazy(() =>
+  import("./pages/RevisaoIndicador.js").then((m) => ({ default: m.RevisaoIndicador })),
+);
 const Logs = lazy(() => import("./pages/Logs.js").then((m) => ({ default: m.Logs })));
 
 export const router = createBrowserRouter([
@@ -52,6 +56,8 @@ export const router = createBrowserRouter([
         children: [
           { path: "/pesquisas/nova", element: <NovaPesquisa /> },
           { path: "/pesquisas/:id/editar", element: <NovaPesquisa /> },
+          { path: "/indicadores", element: <Indicadores /> },
+          { path: "/indicadores/:id", element: <RevisaoIndicador /> },
         ],
       },
     ],

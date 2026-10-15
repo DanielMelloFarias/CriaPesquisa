@@ -8,6 +8,7 @@ import { UsuarioAvatar } from "./UsuarioAvatar.js";
 const TITULOS: Record<string, string> = {
   "/": "Visão geral",
   "/pesquisas": "Pesquisas",
+  "/indicadores": "Indicadores",
   "/usuarios": "Usuários",
   "/logs": "Auditoria",
 };
@@ -71,7 +72,7 @@ const Dir = styled.div`
 
 export function Topbar({ colapsada, onToggle }: { colapsada: boolean; onToggle: () => void }) {
   const { pathname } = useLocation();
-  const titulo = TITULOS[pathname] ?? "CriaPesquisa";
+  const titulo = TITULOS[pathname] ?? (pathname.startsWith("/indicadores/") ? "Indicadores" : "CriaPesquisa");
 
   return (
     <Bar>

@@ -161,6 +161,14 @@ banco não protege contra perda da máquina.
 
 ## Deploy
 
+**Antes de subir esta versão num banco que já existe:** ela remove a coluna antiga
+`Indicador.origemPlanilha`. Confira que está vazia (precisa imprimir `0`; se a tabela ou a
+coluna ainda não existem, é o primeiro deploy: pule):
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env.prod exec -T postgres psql -U cria_user -d criapesquisa -tAc 'SELECT count(*) FROM "Indicador" WHERE "origemPlanilha" IS NOT NULL'
+```
+
 ```bash
 cp .env.prod.example .env.prod      # preencha JWT_SECRET, senhas e domínios
 docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
@@ -187,6 +195,27 @@ publicada. O script é idempotente.
    ```bash
    docker compose -f docker-compose.prod.yml --env-file .env.prod restart api
    ```
+
+#### Importar os indicadores da planilha (uma vez)
+
+1. Exporte a planilha "Exportação Indicadores" do Google Sheets como `.xlsx` e copie para a VM
+   (ex.: `/tmp/indicadores.xlsx`). **Não** coloque o arquivo dentro do repositório: ele tem
+   e-mails pessoais na coluna "Usuario" (o importador não lê essa coluna).
+2. Confirme que o arquivo existe: `ls -l /tmp/indicadores.xlsx`. **Se não existir, pare**
+   (com o arquivo ausente o docker cria um diretório vazio nesse caminho).
+3. Rode, passando o arquivo para dentro do contêiner:
+
+   ```bash
+   docker compose -f docker-compose.prod.yml --env-file .env.prod --profile seed run --rm \
+     -v /tmp/indicadores.xlsx:/tmp/indicadores.xlsx:ro seed npx tsx scripts/importar-indicadores.ts /tmp/indicadores.xlsx
+   ```
+
+4. Confira a saída: a primeira linha deve ser "110 lidas · …". Saída vazia = o script não rodou.
+   Rodar de novo é seguro: indicadores já importados (e já revisados) não são tocados.
+5. Reinicie a API: `docker compose -f docker-compose.prod.yml --env-file .env.prod restart api`.
+6. Os indicadores aparecem em **Indicadores** (menu Administração) como "Para revisar".
+   Nenhum número aparece no sistema até alguém ativar o indicador.
+7. Apague o arquivo da VM: `rm /tmp/indicadores.xlsx`.
 
 Gere os segredos com algo como `node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"`.
 `SEED_PASSWORD` precisa atender à política de senha — o seed recusa senha fraca em produção.

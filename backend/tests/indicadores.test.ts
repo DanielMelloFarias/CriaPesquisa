@@ -160,7 +160,7 @@ describe("POST /api/indicadores", () => {
     });
 
     it("PUT só com recorteConfig confere a config gravada no cenário APÓS -> 422", async () => {
-      vi.mocked(indicadorModel.obterPorId).mockResolvedValue({ id: "i1", tipo: "ESCALA", config: escalaPareada.config } as never);
+      vi.mocked(indicadorModel.obterPorId).mockResolvedValue({ id: "i1", tipo: "ESCALA", status: "ATIVO", config: escalaPareada.config } as never);
       vi.mocked(indicadorModel.perguntasPorId).mockResolvedValue([
         { id: "pnAntes", tipo: "ESCOLHA_UNICA", opcoes: ["Baixa", "Alta"] },
         { id: "pnDepois", tipo: "ESCOLHA_UNICA", opcoes: ["Baixa", "Alta", "Nova opção"] },
@@ -295,7 +295,7 @@ describe("PUT /api/indicadores/:id", () => {
   });
 
   describe("conferência das perguntas só quando tipo/config vêm no corpo", () => {
-    const gravado = { id: "i1", tipo: "ESCALA", config: { perguntaId: "pn", notas: { Antes: 100 } } };
+    const gravado = { id: "i1", tipo: "ESCALA", status: "ATIVO", config: { perguntaId: "pn", notas: { Antes: 100 } } };
     const pergunta = { id: "pn", tipo: "ESCOLHA_UNICA" as const, opcoes: ["Antes", "Após"] };
     const put = (corpo: object) =>
       request(app).put("/api/indicadores/i1").set("Authorization", `Bearer ${tokenGestor}`).send(corpo);
@@ -385,6 +385,37 @@ describe("PUT /api/indicadores/:id", () => {
     expect(indicadorModel.atualizar).not.toHaveBeenCalled();
   });
 
+  describe("ativar com recorte ANTES/APÓS gravado", () => {
+    const PAR = { substituicoes: [{ de: "p1", para: "p2" }] };
+
+    it("CONTAGEM {} com par gravado (de não é pergunta da config) -> 422 RECORTE_INCOMPATIVEL", async () => {
+      vi.mocked(indicadorModel.obterPorId).mockResolvedValue({
+        id: "i1", tipo: "CONTAGEM", config: {}, status: "DEFINICAO_INCOMPLETA", motivoIncompleto: "x",
+        recorte: "ANTES_APOS", recorteConfig: PAR,
+      } as never);
+      const res = await request(app)
+        .put("/api/indicadores/i1")
+        .set("Authorization", `Bearer ${tokenGestor}`)
+        .send({ status: "ATIVO" });
+      expect(res.status).toBe(422);
+      expect(res.body.error?.code ?? res.body.code).toBe("RECORTE_INCOMPATIVEL");
+      expect(indicadorModel.atualizar).not.toHaveBeenCalled();
+    });
+
+    it("PROPORCAO cujo par gravado troca a própria pergunta -> 200", async () => {
+      vi.mocked(indicadorModel.obterPorId).mockResolvedValue({
+        id: "i1", tipo: "PROPORCAO", config: CORPO_VALIDO.config, status: "DEFINICAO_INCOMPLETA", motivoIncompleto: "x",
+        recorte: "ANTES_APOS", recorteConfig: PAR,
+      } as never);
+      vi.mocked(indicadorModel.atualizar).mockResolvedValue({ id: "i1", status: "ATIVO" } as never);
+      const res = await request(app)
+        .put("/api/indicadores/i1")
+        .set("Authorization", `Bearer ${tokenGestor}`)
+        .send({ status: "ATIVO" });
+      expect(res.status).toBe(200);
+    });
+  });
+
   describe("regras entre campos valem sobre o registro mesclado (gravado + corpo)", () => {
     const GRAVADO = { id: "i1", tipo: "PROPORCAO", config: CORPO_VALIDO.config, recorte: null, recorteConfig: null };
     const RECORTE_CONFIG = { substituicoes: [{ de: "p1", para: "p2" }] };
@@ -437,6 +468,119 @@ describe("PUT /api/indicadores/:id", () => {
   });
 });
 
+describe("PUT: config completa só é exigida para ATIVO", () => {
+  const PELA_METADE = { perguntaId: "p1", opcoesNumerador: [] };
+  const RASCUNHO = {
+    id: "i1", tipo: "PROPORCAO", config: PELA_METADE, status: "DEFINICAO_INCOMPLETA",
+    motivoIncompleto: "conferir opções", recorte: null, recorteConfig: null,
+  };
+  const put = (corpo: object) =>
+    request(app).put("/api/indicadores/i1").set("Authorization", `Bearer ${tokenGestor}`).send(corpo);
+
+  beforeEach(() => {
+    vi.mocked(indicadorModel.obterPorId).mockResolvedValue(RASCUNHO as never);
+    vi.mocked(indicadorModel.atualizar).mockResolvedValue({ id: "i1" } as never);
+  });
+
+  it("inativar indicador com config gravada pela metade -> 200 sem dependências", async () => {
+    const res = await put({ status: "INATIVO" });
+    expect(res.status).toBe(200);
+    expect(indicadorModel.atualizar).toHaveBeenCalledWith("i1", expect.objectContaining({ status: "INATIVO" }), "u1", []);
+  });
+
+  it("salvar rascunho com config pela metade -> 200", async () => {
+    const res = await put({ nome: "Cobertura", config: PELA_METADE });
+    expect(res.status).toBe(200);
+    expect(indicadorModel.atualizar).toHaveBeenCalledWith("i1", expect.objectContaining({ config: PELA_METADE }), "u1", []);
+  });
+
+  it("rascunho com config inválida troca as dependências antigas por nenhuma", async () => {
+    const res = await put({ tipo: "COMPOSTO", config: { termos: [] } });
+    expect(res.status).toBe(200);
+    expect(vi.mocked(indicadorModel.atualizar).mock.calls[0]![3]).toEqual([]);
+  });
+
+  it("rascunho com config válida segue checando dependência inexistente -> 422", async () => {
+    vi.mocked(indicadorModel.idsAtivos).mockResolvedValue([]);
+    const res = await put({ tipo: "COMPOSTO", config: { termos: [{ indicadorId: "fantasma", peso: 1 }], divisor: 1 } });
+    expect(res.status).toBe(422);
+    expect(res.body.error.code).toBe("DEPENDENCIA_INEXISTENTE");
+  });
+
+  it("rascunho com config válida segue recusando ciclo -> 409", async () => {
+    vi.mocked(indicadorModel.grafoDeDependencias).mockResolvedValue(new Map([["idtc", ["i1"]]]));
+    const res = await put({ tipo: "COMPOSTO", config: { termos: [{ indicadorId: "idtc", peso: 1 }], divisor: 1 } });
+    expect(res.status).toBe(409);
+  });
+
+  it("ativar com a config pela metade -> 422 e não grava", async () => {
+    const res = await put({ status: "ATIVO" });
+    expect(res.status).toBe(422);
+    expect(indicadorModel.atualizar).not.toHaveBeenCalled();
+  });
+
+  it("ativar só com status confere as perguntas da config gravada -> 422 PERGUNTA_INCOMPATIVEL", async () => {
+    vi.mocked(indicadorModel.obterPorId).mockResolvedValue({
+      ...RASCUNHO, tipo: "ESCALA", config: { perguntaId: "pn", notas: { Antes: 100 } },
+    } as never);
+    vi.mocked(indicadorModel.perguntasPorId).mockResolvedValue([
+      { id: "pn", tipo: "ESCOLHA_UNICA", opcoes: ["Antes", "Após"] },
+    ]);
+    const res = await put({ status: "ATIVO" });
+    expect(res.status).toBe(422);
+    expect(res.body.error.code).toBe("PERGUNTA_INCOMPATIVEL");
+    expect(indicadorModel.atualizar).not.toHaveBeenCalled();
+  });
+});
+
+describe("PUT: null limpa recorte, recorteConfig e meta", () => {
+  const COM_RECORTE = {
+    id: "i1", tipo: "PROPORCAO", config: CORPO_VALIDO.config, status: "ATIVO", motivoIncompleto: null,
+    recorte: "ANTES_APOS", recorteConfig: { substituicoes: [{ de: "p1", para: "p2" }] }, meta: 80,
+  };
+  const put = (corpo: object) =>
+    request(app).put("/api/indicadores/i1").set("Authorization", `Bearer ${tokenGestor}`).send(corpo);
+
+  beforeEach(() => {
+    vi.mocked(indicadorModel.obterPorId).mockResolvedValue(COM_RECORTE as never);
+    vi.mocked(indicadorModel.atualizar).mockResolvedValue({ id: "i1" } as never);
+  });
+
+  it("recorte e recorteConfig null juntos -> 200 e repassa os nulls", async () => {
+    const res = await put({ recorte: null, recorteConfig: null });
+    expect(res.status).toBe(200);
+    expect(indicadorModel.atualizar).toHaveBeenCalledWith(
+      "i1", expect.objectContaining({ recorte: null, recorteConfig: null }), "u1", [],
+    );
+  });
+
+  it("só recorte null com recorteConfig gravado -> 422", async () => {
+    const res = await put({ recorte: null });
+    expect(res.status).toBe(422);
+    expect(indicadorModel.atualizar).not.toHaveBeenCalled();
+  });
+
+  it("só recorteConfig null com recorte gravado -> 422", async () => {
+    const res = await put({ recorteConfig: null });
+    expect(res.status).toBe(422);
+    expect(indicadorModel.atualizar).not.toHaveBeenCalled();
+  });
+
+  it("meta null -> 200 e repassa null", async () => {
+    const res = await put({ meta: null });
+    expect(res.status).toBe(200);
+    expect(indicadorModel.atualizar).toHaveBeenCalledWith("i1", expect.objectContaining({ meta: null }), "u1", []);
+  });
+
+  it("criação continua recusando recorte null -> 422", async () => {
+    const res = await request(app)
+      .post("/api/indicadores")
+      .set("Authorization", `Bearer ${tokenGestor}`)
+      .send({ ...CORPO_VALIDO, recorte: null });
+    expect(res.status).toBe(422);
+  });
+});
+
 describe("GET /api/indicadores", () => {
   it("qualquer papel autenticado lista -> 200", async () => {
     vi.mocked(indicadorModel.listar).mockResolvedValue({ total: 0, itens: [] } as never);
@@ -454,6 +598,63 @@ describe("GET /api/indicadores", () => {
     vi.mocked(indicadorModel.listar).mockResolvedValue({ total: 0, itens: [] } as never);
     await request(app).get("/api/indicadores?status=ATIVO").set("Authorization", `Bearer ${tokenGestor}`);
     expect(indicadorModel.listar).toHaveBeenCalledWith(expect.objectContaining({ status: "ATIVO" }));
+  });
+});
+
+describe("listagem com filtros e contadores", () => {
+  const authGestor = `Bearer ${tokenGestor}`;
+
+  it("repassa status, pesquisaId, apresentacao e q ao model e devolve contadores", async () => {
+    vi.mocked(indicadorModel.listar).mockResolvedValue({ total: 0, itens: [] } as never);
+    vi.mocked(indicadorModel.contarPorStatus).mockResolvedValue({ ATIVO: 2, DEFINICAO_INCOMPLETA: 5, INATIVO: 1 });
+    const pesquisaId = "7b8f6a52-3c1d-4e9a-8f10-2d5b6c7e8a90";
+    const res = await request(app)
+      .get(`/api/indicadores?status=DEFINICAO_INCOMPLETA&pesquisaId=${pesquisaId}&apresentacao=Escopo&q=vac`)
+      .set("Authorization", authGestor);
+    expect(res.status).toBe(200);
+    expect(vi.mocked(indicadorModel.listar).mock.calls[0]![0]).toMatchObject({
+      status: "DEFINICAO_INCOMPLETA", pesquisaId, apresentacao: "Escopo", q: "vac",
+    });
+    expect(res.body.contadores).toEqual({ ATIVO: 2, DEFINICAO_INCOMPLETA: 5, INATIVO: 1 });
+  });
+
+  it("apresentacao fora de Escopo/Perfil = 422", async () => {
+    const res = await request(app).get("/api/indicadores?apresentacao=Outra").set("Authorization", authGestor);
+    expect(res.status).toBe(422);
+    expect(indicadorModel.listar).not.toHaveBeenCalled();
+  });
+
+  it("cadastro aceita apresentacao e categoria, mas não idsPlanilha/dadosPlanilha", async () => {
+    vi.mocked(indicadorModel.criar).mockResolvedValue({ id: "i1", ...CORPO_VALIDO } as never);
+    const res = await request(app)
+      .post("/api/indicadores")
+      .set("Authorization", authGestor)
+      .send({
+        ...CORPO_VALIDO,
+        apresentacao: ["Escopo", "Perfil"],
+        categoria: "Renda",
+        idsPlanilha: ["x"],
+        dadosPlanilha: { a: "b" },
+      });
+    expect(res.status).toBe(201);
+    const dados = vi.mocked(indicadorModel.criar).mock.calls[0]![0] as Record<string, unknown>;
+    expect(dados.apresentacao).toEqual(["Escopo", "Perfil"]);
+    expect(dados.categoria).toBe("Renda");
+    expect(dados).not.toHaveProperty("idsPlanilha");
+    expect(dados).not.toHaveProperty("dadosPlanilha");
+  });
+
+  it("edição aceita apresentacao e categoria; apresentacao inválida = 422", async () => {
+    vi.mocked(indicadorModel.obterPorId).mockResolvedValue({ id: "i1", tipo: "PROPORCAO", config: CORPO_VALIDO.config, status: "ATIVO" } as never);
+    vi.mocked(indicadorModel.atualizar).mockResolvedValue({ id: "i1" } as never);
+    const ok = await request(app)
+      .put("/api/indicadores/i1")
+      .set("Authorization", authGestor)
+      .send({ apresentacao: ["Perfil"], categoria: "Saúde" });
+    expect(ok.status).toBe(200);
+    expect(vi.mocked(indicadorModel.atualizar).mock.calls[0]![1]).toMatchObject({ apresentacao: ["Perfil"], categoria: "Saúde" });
+    const ruim = await request(app).put("/api/indicadores/i1").set("Authorization", authGestor).send({ apresentacao: ["Outra"] });
+    expect(ruim.status).toBe(422);
   });
 });
 
