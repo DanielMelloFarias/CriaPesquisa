@@ -17,6 +17,7 @@ RUN npx prisma generate
 
 COPY tsconfig.json ./
 COPY src ./src
+COPY referencias ./referencias
 RUN npm run build
 
 # Dados de referência lidos pelo seed (municípios). Ficam só nesta etapa: a
@@ -40,6 +41,7 @@ WORKDIR /app
 
 COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
+COPY --from=build /app/referencias ./referencias
 COPY --from=build /app/prisma ./prisma
 COPY package.json ./
 
