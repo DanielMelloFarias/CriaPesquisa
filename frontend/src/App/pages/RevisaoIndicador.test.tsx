@@ -237,6 +237,89 @@ describe("RevisaoIndicador", () => {
     expect(await screen.findByText("Salvo")).toBeInTheDocument();
   });
 
+  it("meta vazia envia meta: null", async () => {
+    indicador = indicadorBase({ meta: 80 });
+    putSpy.mockResolvedValueOnce({ data: { indicador } } as never);
+    renderTela();
+
+    await userEvent.clear(await screen.findByLabelText(/meta/i));
+    await userEvent.click(screen.getByRole("button", { name: "Salvar" }));
+
+    await vi.waitFor(() => expect(putSpy).toHaveBeenCalled());
+    expect((putSpy.mock.calls[0][1] as Record<string, unknown>).meta).toBeNull();
+  });
+
+  it("recorte gravado aparece ligado e desligar envia recorte e recorteConfig null", async () => {
+    indicador = indicadorBase({ recorte: "ANTES_APOS", recorteConfig: { substituicoes: [{ de: "q1", para: "q3" }] } });
+    putSpy.mockResolvedValueOnce({ data: { indicador } } as never);
+    renderTela();
+
+    const caixa = await screen.findByLabelText(/comparar antes e depois/i);
+    expect(caixa).toBeChecked();
+    expect(screen.getByLabelText(/pergunta do depois/i)).toHaveValue("q3");
+    await userEvent.click(caixa);
+    await userEvent.click(screen.getByRole("button", { name: "Salvar" }));
+
+    await vi.waitFor(() => expect(putSpy).toHaveBeenCalled());
+    const corpo = putSpy.mock.calls[0][1] as Record<string, unknown>;
+    expect(corpo.recorte).toBeNull();
+    expect(corpo.recorteConfig).toBeNull();
+  });
+
+  it("tipo de JSON com recorte gravado: desligar envia null", async () => {
+    indicador = indicadorBase({
+      tipo: "CLASSIFICACAO",
+      config: { tipo: "CLASSIFICACAO", indicadorId: "x", faixas: [] },
+      recorte: "ANTES_APOS",
+      recorteConfig: { substituicoes: [{ de: "q1", para: "q3" }] },
+    });
+    putSpy.mockResolvedValueOnce({ data: { indicador } } as never);
+    renderTela();
+
+    await userEvent.click(await screen.findByLabelText(/comparar antes e depois/i));
+    await userEvent.click(screen.getByRole("button", { name: "Salvar" }));
+
+    await vi.waitFor(() => expect(putSpy).toHaveBeenCalled());
+    const corpo = putSpy.mock.calls[0][1] as Record<string, unknown>;
+    expect(corpo.recorte).toBeNull();
+    expect(corpo.recorteConfig).toBeNull();
+  });
+
+  it("trocar a pergunta do ANTES zera a pergunta do APÓS", async () => {
+    indicador = indicadorBase({ recorte: "ANTES_APOS", recorteConfig: { substituicoes: [{ de: "q1", para: "q3" }] } });
+    renderTela();
+
+    await userEvent.selectOptions(await screen.findByLabelText(/^pergunta$/i), "q3");
+
+    expect(screen.getByLabelText(/pergunta do depois/i)).toHaveValue("");
+    expect(screen.getByText("Escolha a pergunta do depois.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Salvar" })).toBeDisabled();
+  });
+
+  it("enquanto as perguntas carregam não mostra o editor JSON e não deixa salvar", async () => {
+    getSpy.mockImplementation((async (url: string) => {
+      if (url === "/indicadores/i1") return { data: { indicador } };
+      return new Promise(() => {}); // perguntas nunca chegam
+    }) as never);
+    renderTela();
+
+    expect(await screen.findByText("Carregando perguntas…")).toBeInTheDocument();
+    expect(screen.queryByLabelText(/configuração \(json\)/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/sem pesquisa vinculada/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Salvar" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Ativar" })).toBeDisabled();
+  });
+
+  it("ESCALA: nota fora de 0–100 mostra aviso e bloqueia Salvar", async () => {
+    indicador = indicadorBase({ tipo: "ESCALA", config: { tipo: "ESCALA", perguntaId: "q1", notas: {} } });
+    renderTela();
+
+    await userEvent.type(await screen.findByLabelText("Nota de Sim"), "150");
+
+    expect(screen.getByText("As notas precisam ficar entre 0 e 100.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Salvar" })).toBeDisabled();
+  });
+
   it("ligar 'Comparar antes e depois' envia recorte e substituição", async () => {
     putSpy.mockResolvedValueOnce({ data: { indicador } } as never);
     renderTela();

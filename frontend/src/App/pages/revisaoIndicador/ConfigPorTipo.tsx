@@ -27,6 +27,13 @@ export function comoObjeto(valor: unknown): ConfigSolta {
   return typeof valor === "object" && valor !== null && !Array.isArray(valor) ? { ...(valor as ConfigSolta) } : {};
 }
 
+const notaForaDaFaixa = (n: unknown) => typeof n === "number" && (n < 0 || n > 100);
+
+/** ESCALA: alguma nota fora de 0–100 (null = fora do cálculo, vale). */
+export function notasForaDaFaixa(c: ConfigSolta): boolean {
+  return Object.values(comoObjeto(c.notas)).some(notaForaDaFaixa);
+}
+
 /** Só as chaves que a API aceita para o tipo (os schemas são `strict`). */
 export function configDoFormulario(tipo: string, c: ConfigSolta): ConfigSolta {
   const perguntaId = typeof c.perguntaId === "string" ? c.perguntaId : "";
@@ -183,6 +190,7 @@ function NotasEscala({ config, opcoes, onChange }: { config: ConfigSolta; opcoes
           );
         })}
       </Opcoes>
+      {notasForaDaFaixa(config) && <ErroLocal>As notas precisam ficar entre 0 e 100.</ErroLocal>}
     </Field>
   );
 }

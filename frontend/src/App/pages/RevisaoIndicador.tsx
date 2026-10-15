@@ -30,6 +30,7 @@ import {
   ErroLocal,
   comoObjeto,
   configDoFormulario,
+  notasForaDaFaixa,
   type ConfigSolta,
 } from "./revisaoIndicador/ConfigPorTipo.js";
 import { Recorte, type EstadoRecorte } from "./revisaoIndicador/Recorte.js";
@@ -95,7 +96,7 @@ function lerErro(err: unknown): { erro: string; itens: string[] } {
   if (Array.isArray(details.formErrors)) itens.push(...details.formErrors.map(String));
   if (details.fieldErrors && typeof details.fieldErrors === "object") {
     for (const [campo, msgs] of Object.entries(details.fieldErrors)) {
-      for (const m of msgs ?? []) itens.push(`${campo}: ${m}`);
+      if (Array.isArray(msgs)) for (const m of msgs) itens.push(`${campo}: ${m}`);
     }
   }
   return { erro: e?.message ?? "Não foi possível salvar. Tente novamente.", itens };
@@ -147,15 +148,23 @@ export function RevisaoIndicador() {
 function Cadastro({ indicador }: { indicador: Indicador }) {
   const qc = useQueryClient();
   const salvar = useSalvarIndicador(indicador.id);
-  const { data: pesquisa } = usePesquisaBruta(indicador.pesquisaId ?? undefined);
+  const consultaPesquisa = usePesquisaBruta(indicador.pesquisaId ?? undefined);
+  const pesquisa = consultaPesquisa.data;
+  // Carregando ≠ sem pesquisa: enquanto as perguntas não chegam, o formulário não aparece
+  // (senão o editor JSON entraria no lugar e o Salvar mandaria a config errada).
+  const carregandoPerguntas = Boolean(indicador.pesquisaId) && pesquisa === undefined;
 
+  const subsGravadas = indicador.recorteConfig?.substituicoes ?? [];
   const [nome, setNome] = useState(indicador.nome);
   const [apresentacao, setApresentacao] = useState<string[]>(indicador.apresentacao);
   const [meta, setMeta] = useState(indicador.meta === null ? "" : String(indicador.meta));
   const [tipo, setTipo] = useState(indicador.tipo);
   const [config, setConfig] = useState<ConfigSolta>(comoObjeto(indicador.config));
   const [jsonTexto, setJsonTexto] = useState(JSON.stringify(indicador.config ?? { tipo: indicador.tipo }, null, 2));
-  const [recorte, setRecorte] = useState<EstadoRecorte>({ ligado: false, para: "" });
+  const [recorte, setRecorte] = useState<EstadoRecorte>({
+    ligado: indicador.recorte === "ANTES_APOS",
+    para: subsGravadas.length === 1 ? subsGravadas[0].para : "",
+  });
   const [retorno, setRetorno] = useState<Retorno | null>(null);
 
   const perguntas = pesquisa?.perguntas ?? [];
@@ -163,6 +172,9 @@ function Cadastro({ indicador }: { indicador: Indicador }) {
   const usaFormulario = TIPOS_COM_FORMULARIO.has(tipo) && (tipo === "CONTAGEM" || Boolean(pesquisa));
   const perguntasCompativeis = perguntas.filter((p) => (PERGUNTAS_DO_TIPO[tipo] ?? []).includes(p.tipo));
   const lePergunta = usaFormulario && tipo in PERGUNTAS_DO_TIPO;
+  // O par só é escolhido pela tela quando há uma pergunta única (tipos de formulário) e
+  // no máximo um par gravado; senão a tela só liga/desliga o que está gravado.
+  const escolhePar = lePergunta && subsGravadas.length <= 1;
 
   const jsonParseado = useMemo(() => {
     try {
@@ -175,11 +187,18 @@ function Cadastro({ indicador }: { indicador: Indicador }) {
   const metaNumero = meta.trim() === "" ? undefined : Number(meta.replace(",", "."));
   const metaInvalida = metaNumero !== undefined && !Number.isFinite(metaNumero);
   const deRecorte = typeof config.perguntaId === "string" ? config.perguntaId : "";
-  const recorteNovo = lePergunta && indicador.recorte === null && recorte.ligado;
-  const recorteIncompleto = recorteNovo && !recorte.para;
+  const recorteIncompleto = escolhePar && recorte.ligado && !recorte.para;
+  const notasInvalidas = usaFormulario && tipo === "ESCALA" && notasForaDaFaixa(config);
 
   const jsonInvalido = !usaFormulario && !jsonParseado.ok;
-  const bloqueado = salvar.isPending || jsonInvalido || metaInvalida || !nome.trim() || recorteIncompleto;
+  const bloqueado =
+    salvar.isPending || carregandoPerguntas || jsonInvalido || metaInvalida || notasInvalidas || !nome.trim() || recorteIncompleto;
+
+  /** Trocar a pergunta do ANTES invalida a pergunta do APÓS escolhida para ela. */
+  function mudarConfig(nova: ConfigSolta) {
+    if (nova.perguntaId !== config.perguntaId) setRecorte((r) => ({ ...r, para: "" }));
+    setConfig(nova);
+  }
 
   function trocarTipo(novo: string) {
     const base = novo === indicador.tipo ? indicador.config : { tipo: novo };
@@ -195,11 +214,15 @@ function Cadastro({ indicador }: { indicador: Indicador }) {
       tipo,
       config: usaFormulario ? configDoFormulario(tipo, config) : jsonParseado.ok ? jsonParseado.valor : undefined,
     };
-    // A API não aceita `meta: null`: campo vazio só não mexe na meta gravada.
-    if (metaNumero !== undefined) corpo.meta = metaNumero;
-    if (recorteNovo) {
+    // Campo vazio limpa a meta gravada.
+    corpo.meta = metaNumero ?? null;
+    if (escolhePar && recorte.ligado) {
       corpo.recorte = "ANTES_APOS";
       corpo.recorteConfig = { substituicoes: [{ de: deRecorte, para: recorte.para }] };
+    } else if (!recorte.ligado && indicador.recorte !== null) {
+      // Desligar: a API limpa com null (ausente = não mexer).
+      corpo.recorte = null;
+      corpo.recorteConfig = null;
     }
     return corpo;
   }
@@ -267,23 +290,33 @@ function Cadastro({ indicador }: { indicador: Indicador }) {
         </Select>
       </Field>
 
-      {usaFormulario ? (
-        <FormularioDoTipo tipo={tipo} config={config} perguntas={perguntas} onChange={setConfig} />
+      {carregandoPerguntas ? (
+        <Muted style={{ marginBottom: 16 }}>
+          {consultaPesquisa.isError ? "Não foi possível carregar as perguntas da pesquisa." : "Carregando perguntas…"}
+        </Muted>
       ) : (
         <>
-          {TIPOS_COM_FORMULARIO.has(tipo) && (
-            <Muted style={{ marginBottom: 8 }}>Indicador sem pesquisa vinculada: edite a configuração pelo JSON.</Muted>
+          {usaFormulario ? (
+            <FormularioDoTipo tipo={tipo} config={config} perguntas={perguntas} onChange={mudarConfig} />
+          ) : (
+            <>
+              {TIPOS_COM_FORMULARIO.has(tipo) && (
+                <Muted style={{ marginBottom: 8 }}>Indicador sem pesquisa vinculada: edite a configuração pelo JSON.</Muted>
+              )}
+              <EditorJson texto={jsonTexto} erro={!jsonParseado.ok} onChange={setJsonTexto} />
+            </>
           )}
-          <EditorJson texto={jsonTexto} erro={!jsonParseado.ok} onChange={setJsonTexto} />
+          {(escolhePar || indicador.recorte !== null) && (
+            <Recorte
+              indicador={indicador}
+              escolhePar={escolhePar}
+              de={deRecorte}
+              perguntas={escolhePar ? perguntasCompativeis : perguntas}
+              estado={recorte}
+              onChange={setRecorte}
+            />
+          )}
         </>
-      )}
-
-      {lePergunta ? (
-        <Recorte indicador={indicador} de={deRecorte} perguntas={perguntasCompativeis} estado={recorte} onChange={setRecorte} />
-      ) : (
-        indicador.recorte === "ANTES_APOS" && (
-          <Muted>Compara antes e depois (recorte gravado, só leitura nesta tela).</Muted>
-        )
       )}
 
       <Acoes>
@@ -303,8 +336,8 @@ function Cadastro({ indicador }: { indicador: Indicador }) {
       </Acoes>
       {retorno && "erro" in retorno && retorno.itens.length > 0 && (
         <ListaProblemas>
-          {retorno.itens.map((item) => (
-            <li key={item}>{item}</li>
+          {retorno.itens.map((item, i) => (
+            <li key={i}>{item}</li>
           ))}
         </ListaProblemas>
       )}
