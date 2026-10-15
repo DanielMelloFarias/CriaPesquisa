@@ -2,6 +2,8 @@ import { prisma } from "../config/prisma.js";
 import type { Prisma, StatusIndicador } from "@prisma/client";
 import type { CriarIndicadorInput, AtualizarIndicadorInput } from "../helper/validators.js";
 
+import type { PerguntaParaConferir } from "../helper/indicadorPerguntas.js";
+
 export interface ListarIndicadoresFiltros {
   status?: StatusIndicador;
   pesquisaId?: string;
@@ -32,6 +34,15 @@ export const indicadorModel = {
 
   obterPorId(id: string) {
     return prisma.indicador.findFirst({ where: { id, deletedAt: null } });
+  },
+
+  async perguntasPorId(ids: string[]): Promise<PerguntaParaConferir[]> {
+    if (ids.length === 0) return [];
+    const linhas = await prisma.pergunta.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, tipo: true, opcoes: { select: { texto: true }, orderBy: { ordem: "asc" } } },
+    });
+    return linhas.map((l) => ({ id: l.id, tipo: l.tipo, opcoes: l.opcoes.map((o) => o.texto) }));
   },
 
   /** Dos ids recebidos, devolve só os que existem e não foram apagados. */

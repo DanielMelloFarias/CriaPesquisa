@@ -28,6 +28,7 @@ beforeEach(() => {
   vi.mocked(indicadorModel.grafoDeDependencias).mockResolvedValue(new Map());
   vi.mocked(indicadorModel.idsAtivos).mockImplementation(async (ids: string[]) => ids);
   vi.mocked(indicadorModel.pesquisaExiste).mockResolvedValue(true);
+  vi.mocked(indicadorModel.perguntasPorId).mockResolvedValue([]);
 });
 
 describe("POST /api/indicadores", () => {
@@ -74,6 +75,32 @@ describe("POST /api/indicadores", () => {
 
     expect(res.status).toBe(422);
     expect(indicadorModel.criar).not.toHaveBeenCalled();
+  });
+
+  it("ESCALA com pergunta sem uma das opções nas notas -> 422 PERGUNTA_INCOMPATIVEL", async () => {
+    vi.mocked(indicadorModel.perguntasPorId).mockResolvedValue([
+      { id: "pn", tipo: "ESCOLHA_UNICA", opcoes: ["Antes", "Após", "Não soube"] },
+    ]);
+    const res = await request(app)
+      .post("/api/indicadores")
+      .set("Authorization", `Bearer ${tokenGestor}`)
+      .send({ codigo: "PN", nome: "Pré-natal", tipo: "ESCALA", config: { perguntaId: "pn", notas: { Antes: 100, "Após": 50 } } });
+    expect(res.status).toBe(422);
+    expect(res.body.error.code).toBe("PERGUNTA_INCOMPATIVEL");
+    expect(indicadorModel.criar).not.toHaveBeenCalled();
+  });
+
+  it("ESCALA completa -> 201", async () => {
+    vi.mocked(indicadorModel.perguntasPorId).mockResolvedValue([
+      { id: "pn", tipo: "ESCOLHA_UNICA", opcoes: ["Antes", "Após"] },
+    ]);
+    vi.mocked(indicadorModel.criar).mockResolvedValue({ id: "i1" } as never);
+    const res = await request(app)
+      .post("/api/indicadores")
+      .set("Authorization", `Bearer ${tokenGestor}`)
+      .send({ codigo: "PN", nome: "Pré-natal", tipo: "ESCALA", config: { perguntaId: "pn", notas: { Antes: 100, "Após": 50 } } });
+    expect(res.status).toBe(201);
+    expect(indicadorModel.criar).toHaveBeenCalledOnce();
   });
 
   it("codigo duplicado (P2002) -> 409 CODIGO_DUPLICADO", async () => {
@@ -192,6 +219,22 @@ describe("PUT /api/indicadores/:id", () => {
 
     expect(res.status).toBe(409);
     expect(res.body.error.code).toBe("DEPENDENCIA_CIRCULAR");
+    expect(indicadorModel.atualizar).not.toHaveBeenCalled();
+  });
+
+  it("edição de ESCALA confere a config gravada com as perguntas atuais -> 422 PERGUNTA_INCOMPATIVEL", async () => {
+    vi.mocked(indicadorModel.obterPorId).mockResolvedValue({
+      id: "i1", tipo: "ESCALA", config: { perguntaId: "pn", notas: { Antes: 100 } },
+    } as never);
+    vi.mocked(indicadorModel.perguntasPorId).mockResolvedValue([
+      { id: "pn", tipo: "ESCOLHA_UNICA", opcoes: ["Antes", "Após"] },
+    ]);
+    const res = await request(app)
+      .put("/api/indicadores/i1")
+      .set("Authorization", `Bearer ${tokenGestor}`)
+      .send({ nome: "Novo nome" });
+    expect(res.status).toBe(422);
+    expect(res.body.error.code).toBe("PERGUNTA_INCOMPATIVEL");
     expect(indicadorModel.atualizar).not.toHaveBeenCalled();
   });
 

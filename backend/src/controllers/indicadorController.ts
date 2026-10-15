@@ -5,7 +5,8 @@ import { indicadorModel } from "../models/indicadorModel.js";
 import { registrarLog } from "../helper/auditoria.js";
 import { HttpError } from "../middleware/errorHandler.js";
 import { parsePaginacao } from "../helper/paginacao.js";
-import { validarConfig, indicadoresReferenciados } from "../helper/indicadorConfig.js";
+import { validarConfig, indicadoresReferenciados, perguntasReferenciadas } from "../helper/indicadorConfig.js";
+import { problemasDasPerguntas } from "../helper/indicadorPerguntas.js";
 import { ordenarPorDependencia, CicloDetectado } from "../helper/dependencias.js";
 import { regrasIndicadorMescladoSchema, type CriarIndicadorInput, type AtualizarIndicadorInput } from "../helper/validators.js";
 import { indicadorCalculoModel } from "../models/indicadorCalculoModel.js";
@@ -40,6 +41,20 @@ async function conferirReferencias(dependencias: string[], pesquisaId?: string):
   }
   if (pesquisaId && !(await indicadorModel.pesquisaExiste(pesquisaId))) {
     throw new HttpError(422, "PESQUISA_INEXISTENTE", "Pesquisa não encontrada");
+  }
+}
+
+const TIPOS_CONFERIDOS = new Set(["ESCALA", "META_POR_IDADE", "PERCENTIL_OMS", "ATALAH"]);
+
+/** Tipos novos: confere a config contra o tipo e as opções das perguntas reais (422 se não bater). */
+async function conferirPerguntas(tipo: CriarIndicadorInput["tipo"], config: unknown): Promise<void> {
+  if (!TIPOS_CONFERIDOS.has(tipo)) return;
+  const cfg = validarConfig(tipo, config);
+  const ids = perguntasReferenciadas(cfg);
+  const perguntas = new Map((await indicadorModel.perguntasPorId(ids)).map((p) => [p.id, p]));
+  const problemas = problemasDasPerguntas(cfg, perguntas);
+  if (problemas.length > 0) {
+    throw new HttpError(422, "PERGUNTA_INCOMPATIVEL", "Configuração não confere com as perguntas", { problemas });
   }
 }
 
@@ -83,6 +98,7 @@ export async function criar(req: Request, res: Response) {
 
   const dependencias = conferirConfig(dados.tipo, dados.config);
   await conferirReferencias(dependencias, dados.pesquisaId);
+  await conferirPerguntas(dados.tipo, dados.config);
   await conferirCiclo("__novo__", dependencias);
 
   const indicador = await indicadorModel.criar(dados, usuario.id, dependencias).catch(traduzirErroDeGravacao);
@@ -122,6 +138,7 @@ export async function atualizar(req: Request, res: Response) {
   const tipo = dados.tipo ?? (atual.tipo as CriarIndicadorInput["tipo"]);
   const dependencias = conferirConfig(tipo, dados.config ?? atual.config);
   await conferirReferencias(dependencias, dados.pesquisaId);
+  await conferirPerguntas(tipo, dados.config ?? atual.config);
   await conferirCiclo(id, dependencias);
 
   const indicador = await indicadorModel.atualizar(id, dados, usuario.id, dependencias).catch(traduzirErroDeGravacao);
