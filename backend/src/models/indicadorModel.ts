@@ -6,6 +6,7 @@ import type { PerguntaParaConferir } from "../helper/indicadorPerguntas.js";
 export interface ListarIndicadoresFiltros {
   status?: StatusIndicador;
   pesquisaId?: string;
+  apresentacao?: string;
   q?: string;
   page?: number;
   pageSize?: number;
@@ -13,10 +14,11 @@ export interface ListarIndicadoresFiltros {
 
 export const indicadorModel = {
   async listar(filtros: ListarIndicadoresFiltros = {}) {
-    const { status, pesquisaId, q, page = 1, pageSize = 50 } = filtros;
+    const { status, pesquisaId, apresentacao, q, page = 1, pageSize = 50 } = filtros;
     const where: Prisma.IndicadorWhereInput = { deletedAt: null };
     if (status) where.status = status;
     if (pesquisaId) where.pesquisaId = pesquisaId;
+    if (apresentacao) where.apresentacao = { has: apresentacao };
     if (q) where.nome = { contains: q, mode: "insensitive" };
 
     const [total, itens] = await Promise.all([
@@ -29,6 +31,24 @@ export const indicadorModel = {
       }),
     ]);
     return { total, itens };
+  },
+
+  async contarPorStatus(): Promise<Record<"ATIVO" | "DEFINICAO_INCOMPLETA" | "INATIVO", number>> {
+    const grupos = await prisma.indicador.groupBy({ by: ["status"], where: { deletedAt: null }, _count: { _all: true } });
+    const base = { ATIVO: 0, DEFINICAO_INCOMPLETA: 0, INATIVO: 0 };
+    for (const g of grupos) base[g.status] = g._count._all;
+    return base;
+  },
+
+  async idsPlanilhaExistentes(): Promise<Set<string>> {
+    const linhas = await prisma.indicador.findMany({ where: { deletedAt: null }, select: { idsPlanilha: true } });
+    return new Set(linhas.flatMap((l) => l.idsPlanilha));
+  },
+
+  async codigosExistentes(): Promise<Set<string>> {
+    // Código é único também entre apagados (constraint do banco): considera todos.
+    const linhas = await prisma.indicador.findMany({ select: { codigo: true } });
+    return new Set(linhas.map((l) => l.codigo));
   },
 
   obterPorId(id: string) {
@@ -62,7 +82,13 @@ export const indicadorModel = {
     return prisma.indicador.findMany({ where: { deletedAt: null, status: { not: "INATIVO" } } });
   },
 
-  async criar(dados: CriarIndicadorInput, usuarioId: string, dependencias: string[]) {
+  /** `origem` só o importador passa: a API de cadastro não grava dados da planilha. */
+  async criar(
+    dados: CriarIndicadorInput,
+    usuarioId: string,
+    dependencias: string[],
+    origem?: { idsPlanilha: string[]; dadosPlanilha: Record<string, string> },
+  ) {
     // Explícito, não o default da coluna (DEFINICAO_INCOMPLETA): indicador da API nasce calculável.
     const status = dados.status ?? "ATIVO";
     return prisma.indicador.create({
@@ -79,7 +105,10 @@ export const indicadorModel = {
         recorteConfig: dados.recorteConfig as Prisma.InputJsonValue | undefined,
         meta: dados.meta,
         formulaOriginal: dados.formulaOriginal,
-        origemPlanilha: dados.origemPlanilha,
+        apresentacao: dados.apresentacao,
+        categoria: dados.categoria,
+        idsPlanilha: origem?.idsPlanilha,
+        dadosPlanilha: origem?.dadosPlanilha as Prisma.InputJsonValue | undefined,
         status,
         motivoIncompleto: status === "DEFINICAO_INCOMPLETA" ? dados.motivoIncompleto : null,
         createdById: usuarioId,

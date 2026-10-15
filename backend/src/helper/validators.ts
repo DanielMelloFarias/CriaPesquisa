@@ -169,7 +169,8 @@ const indicadorBaseSchema = z.object({
     .optional(),
   meta: z.number().optional(),
   formulaOriginal: z.string().optional(),
-  origemPlanilha: z.number().int().optional(),
+  apresentacao: z.array(z.enum(["Escopo", "Perfil"])).max(2).optional(),
+  categoria: z.string().max(100).optional(),
   // Sem status, o indicador nasce ATIVO (indicadorModel.criar): a API cadastra para calcular.
   status: z.enum(["ATIVO", "DEFINICAO_INCOMPLETA", "INATIVO"]).optional(),
   motivoIncompleto: z.string().optional(),

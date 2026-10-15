@@ -457,6 +457,63 @@ describe("GET /api/indicadores", () => {
   });
 });
 
+describe("listagem com filtros e contadores", () => {
+  const authGestor = `Bearer ${tokenGestor}`;
+
+  it("repassa status, pesquisaId, apresentacao e q ao model e devolve contadores", async () => {
+    vi.mocked(indicadorModel.listar).mockResolvedValue({ total: 0, itens: [] } as never);
+    vi.mocked(indicadorModel.contarPorStatus).mockResolvedValue({ ATIVO: 2, DEFINICAO_INCOMPLETA: 5, INATIVO: 1 });
+    const pesquisaId = "7b8f6a52-3c1d-4e9a-8f10-2d5b6c7e8a90";
+    const res = await request(app)
+      .get(`/api/indicadores?status=DEFINICAO_INCOMPLETA&pesquisaId=${pesquisaId}&apresentacao=Escopo&q=vac`)
+      .set("Authorization", authGestor);
+    expect(res.status).toBe(200);
+    expect(vi.mocked(indicadorModel.listar).mock.calls[0]![0]).toMatchObject({
+      status: "DEFINICAO_INCOMPLETA", pesquisaId, apresentacao: "Escopo", q: "vac",
+    });
+    expect(res.body.contadores).toEqual({ ATIVO: 2, DEFINICAO_INCOMPLETA: 5, INATIVO: 1 });
+  });
+
+  it("apresentacao fora de Escopo/Perfil = 422", async () => {
+    const res = await request(app).get("/api/indicadores?apresentacao=Outra").set("Authorization", authGestor);
+    expect(res.status).toBe(422);
+    expect(indicadorModel.listar).not.toHaveBeenCalled();
+  });
+
+  it("cadastro aceita apresentacao e categoria, mas não idsPlanilha/dadosPlanilha", async () => {
+    vi.mocked(indicadorModel.criar).mockResolvedValue({ id: "i1", ...CORPO_VALIDO } as never);
+    const res = await request(app)
+      .post("/api/indicadores")
+      .set("Authorization", authGestor)
+      .send({
+        ...CORPO_VALIDO,
+        apresentacao: ["Escopo", "Perfil"],
+        categoria: "Renda",
+        idsPlanilha: ["x"],
+        dadosPlanilha: { a: "b" },
+      });
+    expect(res.status).toBe(201);
+    const dados = vi.mocked(indicadorModel.criar).mock.calls[0]![0] as Record<string, unknown>;
+    expect(dados.apresentacao).toEqual(["Escopo", "Perfil"]);
+    expect(dados.categoria).toBe("Renda");
+    expect(dados).not.toHaveProperty("idsPlanilha");
+    expect(dados).not.toHaveProperty("dadosPlanilha");
+  });
+
+  it("edição aceita apresentacao e categoria; apresentacao inválida = 422", async () => {
+    vi.mocked(indicadorModel.obterPorId).mockResolvedValue({ id: "i1", tipo: "PROPORCAO", config: CORPO_VALIDO.config, status: "ATIVO" } as never);
+    vi.mocked(indicadorModel.atualizar).mockResolvedValue({ id: "i1" } as never);
+    const ok = await request(app)
+      .put("/api/indicadores/i1")
+      .set("Authorization", authGestor)
+      .send({ apresentacao: ["Perfil"], categoria: "Saúde" });
+    expect(ok.status).toBe(200);
+    expect(vi.mocked(indicadorModel.atualizar).mock.calls[0]![1]).toMatchObject({ apresentacao: ["Perfil"], categoria: "Saúde" });
+    const ruim = await request(app).put("/api/indicadores/i1").set("Authorization", authGestor).send({ apresentacao: ["Outra"] });
+    expect(ruim.status).toBe(422);
+  });
+});
+
 describe("DELETE /api/indicadores/:id", () => {
   it("recusa apagar indicador do qual outro depende -> 409", async () => {
     vi.mocked(indicadorModel.obterPorId).mockResolvedValue({ id: "mcc", codigo: "MCC" } as never);

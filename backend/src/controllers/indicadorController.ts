@@ -31,6 +31,13 @@ function conferirConfig(tipo: CriarIndicadorInput["tipo"], config: unknown): str
  */
 const statusSchema = z.enum(["ATIVO", "DEFINICAO_INCOMPLETA", "INATIVO"]);
 
+const filtrosListagem = z.object({
+  status: statusSchema.optional(),
+  pesquisaId: z.string().uuid().optional(),
+  apresentacao: z.enum(["Escopo", "Perfil"]).optional(),
+  q: z.string().trim().min(1).max(100).optional(),
+});
+
 /** Recusa (422) dependência para indicador inexistente/apagado e pesquisa inexistente, antes de gravar. */
 async function conferirReferencias(dependencias: string[], pesquisaId?: string): Promise<void> {
   const unicas = [...new Set(dependencias)];
@@ -95,10 +102,18 @@ async function conferirCiclo(id: string, dependencias: string[]): Promise<void> 
 }
 
 export async function listar(req: Request, res: Response) {
-  const status = req.query.status === undefined ? undefined : statusSchema.parse(req.query.status);
+  const filtros = filtrosListagem.parse({
+    status: req.query.status,
+    pesquisaId: req.query.pesquisaId,
+    apresentacao: req.query.apresentacao,
+    q: req.query.q,
+  });
   const { page, pageSize } = parsePaginacao(req.query, 50);
-  const { total, itens } = await indicadorModel.listar({ status, page, pageSize });
-  res.json({ total, page, pageSize, itens });
+  const [{ total, itens }, contadores] = await Promise.all([
+    indicadorModel.listar({ ...filtros, page, pageSize }),
+    indicadorModel.contarPorStatus(),
+  ]);
+  res.json({ total, page, pageSize, itens, contadores });
 }
 
 export async function obter(req: Request, res: Response) {
