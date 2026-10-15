@@ -84,12 +84,13 @@ export function Indicadores() {
 
   // Espera a pessoa parar de digitar antes de consultar a API.
   useEffect(() => {
+    if (busca === buscaAplicada) return;
     const t = setTimeout(() => {
       setBuscaAplicada(busca);
       setPagina(1);
     }, 300);
     return () => clearTimeout(t);
-  }, [busca]);
+  }, [busca, buscaAplicada]);
 
   const filtros: FiltrosIndicadores = {};
   if (status !== "TODOS") filtros.status = status;
