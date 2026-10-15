@@ -18,6 +18,7 @@ export interface Indicador {
   recorteConfig: { substituicoes: Array<{ de: string; para: string }> } | null;
   apresentacao: string[];
   categoria: string | null;
+  objetivo: string | null;
   meta: number | null;
   casasDecimais: number;
   idsPlanilha: string[];

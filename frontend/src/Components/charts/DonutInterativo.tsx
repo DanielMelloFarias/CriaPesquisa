@@ -7,7 +7,7 @@ import { PALETA } from "../../App/data/cria.js";
 import "./setup.js";
 
 interface Props {
-  titulo: string;
+  titulo?: string;
   labels: string[];
   data: number[];
   /** Rótulo mostrado no centro junto do total (ex.: "respostas"). */
@@ -19,6 +19,8 @@ interface Props {
   full?: boolean;
   /** Posição da legenda: embaixo (padrão) ou à direita (legenda própria multi-coluna). */
   legenda?: "bottom" | "right";
+  /** Renderiza só o gráfico, sem Card/título próprios (para embutir em outro cartão). */
+  semCard?: boolean;
 }
 
 const Hint = styled.span`
@@ -123,6 +125,7 @@ export function DonutInterativo({
   dica = "clique numa fatia para ver o valor",
   full = false,
   legenda = "bottom",
+  semCard = false,
 }: Props) {
   const t = useTheme();
   const h = altura ?? (full ? 320 : 260);
@@ -222,6 +225,10 @@ export function DonutInterativo({
   }
 
   const grafico = <Doughnut ref={chartRef} data={{ labels, datasets: [{ data, backgroundColor: paleta, borderColor: t.cores.surface, borderWidth: 2, hoverOffset: 10 }] }} options={options} plugins={[textoCentral]} />;
+
+  if (semCard) {
+    return <div style={{ height: h, position: "relative" }}>{grafico}</div>;
+  }
 
   return (
     <Card style={estiloCard}>

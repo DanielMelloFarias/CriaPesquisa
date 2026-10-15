@@ -1,4 +1,4 @@
-import styled from "styled-components";
+import styled, { useTheme } from "styled-components";
 import { Link } from "react-router-dom";
 import { Info } from "lucide-react";
 import { Card, Muted, Tag } from "../../Styles/ui.js";
@@ -118,6 +118,8 @@ const LinkRevisar = styled(Link)`
 const pct = (v: number) => `${v.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
 
 function Faixas({ faixas }: { faixas: Array<{ rotulo: string; percentual: number }> }) {
+  const t = useTheme();
+  const CORES = [t.cores.primaryDark, t.cores.accent, t.cores.warn, t.cores.success, t.cores.danger];
   return (
     <>
       <Barra>
@@ -138,7 +140,6 @@ function Faixas({ faixas }: { faixas: Array<{ rotulo: string; percentual: number
   );
 }
 
-const CORES = ["#0B2D6E", "#1756B8", "#3A8EF0", "#78BBFF", "#D9ECFF"];
 
 function Corpo({ exibicao, podeRevisar, id }: { exibicao: Exibicao; podeRevisar: boolean; id: string }) {
   switch (exibicao.forma) {
@@ -161,11 +162,11 @@ function Corpo({ exibicao, podeRevisar, id }: { exibicao: Exibicao; podeRevisar:
     case "DISTRIBUICAO":
       return exibicao.grafico === "ROSCA" ? (
         <DonutInterativo
-          titulo="Distribuição"
           labels={exibicao.itens.map((i) => i.opcao)}
           data={exibicao.itens.map((i) => i.percentual)}
           unidade="%"
           altura={220}
+          semCard
         />
       ) : (
         <FunilValores valores={exibicao.itens.map((i) => ({ rotulo: i.opcao, valor: pct(i.percentual), barra: i.percentual }))} />
@@ -192,7 +193,7 @@ export function CartaoIndicador({
   podeRevisar: boolean;
 }) {
   const modelo = formatarResultado(indicador, resultado);
-  const objetivo = (indicador as Indicador & { objetivo?: string | null }).objetivo;
+  const objetivo = indicador.objetivo;
 
   return (
     <Card>
@@ -214,7 +215,11 @@ export function CartaoIndicador({
             <TituloColuna>Antes do Cartão CRIA</TituloColuna>
             <Corpo exibicao={modelo.antes} podeRevisar={podeRevisar} id={indicador.id} />
           </div>
-          {modelo.diferenca !== undefined && <Tag $tone="blue">{modelo.diferenca}</Tag>}
+          {modelo.diferenca !== undefined && (
+            <Tag $tone="blue" data-testid="diferenca" aria-label="Diferença entre antes e após">
+              {modelo.diferenca}
+            </Tag>
+          )}
           <div>
             <TituloColuna>Após o Cartão CRIA</TituloColuna>
             <Corpo exibicao={modelo.apos} podeRevisar={podeRevisar} id={indicador.id} />

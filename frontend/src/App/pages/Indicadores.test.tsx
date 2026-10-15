@@ -15,12 +15,12 @@ const ITENS = [
   {
     id: "i1", codigo: "IND-1", nome: "Cobertura vacinal", tipo: "PROPORCAO", status: "DEFINICAO_INCOMPLETA",
     motivoIncompleto: "pergunta não encontrada: Vacina em dia?", pesquisaId: null, config: null, recorte: null,
-    recorteConfig: null, apresentacao: ["Escopo"], categoria: null, meta: null, idsPlanilha: ["1"], dadosPlanilha: null,
+    recorteConfig: null, apresentacao: ["Escopo"], categoria: null, objetivo: null, meta: null, idsPlanilha: ["1"], dadosPlanilha: null,
   },
   {
     id: "i2", codigo: "IND-2", nome: "Perfil das gestantes", tipo: "MEDIA", status: "DEFINICAO_INCOMPLETA",
     motivoIncompleto: null, pesquisaId: null, config: null, recorte: null,
-    recorteConfig: null, apresentacao: ["Perfil"], categoria: null, meta: null, idsPlanilha: ["2"], dadosPlanilha: null,
+    recorteConfig: null, apresentacao: ["Perfil"], categoria: null, objetivo: null, meta: null, idsPlanilha: ["2"], dadosPlanilha: null,
   },
 ];
 

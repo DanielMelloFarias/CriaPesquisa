@@ -8,8 +8,8 @@ import type { ResultadoComRecorte } from "../../App/lib/resultadoIndicador.js";
 
 // jsdom não tem ResizeObserver (exigido pelo Chart.js): troca a rosca por um stub que expõe os dados.
 vi.mock("../charts/DonutInterativo.js", () => ({
-  DonutInterativo: (p: { titulo: string; labels: string[]; data: number[] }) => (
-    <div data-testid="rosca" data-labels={p.labels.join("|")} data-data={p.data.join("|")}>{p.titulo}</div>
+  DonutInterativo: (p: { semCard?: boolean; labels: string[]; data: number[] }) => (
+    <div data-testid="rosca" data-labels={p.labels.join("|")} data-data={p.data.join("|")} data-semcard={String(p.semCard)}/>
   ),
 }));
 
@@ -17,7 +17,7 @@ function indicador(extra: Partial<Indicador> = {}): Indicador {
   return {
     id: "i1", codigo: "IND-1", nome: "Cobertura vacinal", tipo: "PROPORCAO", status: "ATIVO",
     motivoIncompleto: null, pesquisaId: "p1", config: null, recorte: null, recorteConfig: null,
-    apresentacao: ["Escopo"], categoria: null, meta: null, casasDecimais: 1, idsPlanilha: [], dadosPlanilha: null,
+    apresentacao: ["Escopo"], categoria: null, objetivo: null, meta: null, casasDecimais: 1, idsPlanilha: [], dadosPlanilha: null,
     ...extra,
   };
 }
@@ -71,6 +71,7 @@ describe("CartaoIndicador", () => {
     const rosca = screen.getByTestId("rosca");
     expect(rosca).toHaveAttribute("data-labels", "Sim|Não|Talvez");
     expect(rosca).toHaveAttribute("data-data", "50|30|20");
+    expect(rosca).toHaveAttribute("data-semcard", "true");
   });
 
   it("distribuição com muitos itens usa barras com rótulos", () => {
@@ -103,18 +104,18 @@ describe("CartaoIndicador", () => {
     expect(screen.getByText("Após o Cartão CRIA")).toBeInTheDocument();
     expect(screen.getByText("40,0%")).toBeInTheDocument();
     expect(screen.getByText("55,0%")).toBeInTheDocument();
-    expect(screen.getByText("+15,0 p.p.")).toBeInTheDocument();
+    expect(screen.getByTestId("diferenca")).toHaveTextContent("+15,0 p.p.");
   });
 
   it("pareado com um lado sem dados mostra os dois lados e nenhuma diferença", () => {
     renderCartao(indicador(), { antes: { status: "SEM_DADOS" }, apos: { status: "OK", valor: 55 } });
     expect(screen.getByText("Sem respostas aprovadas neste recorte")).toBeInTheDocument();
     expect(screen.getByText("55,0%")).toBeInTheDocument();
-    expect(screen.queryByText(/p\.p\./)).toBeNull();
+    expect(screen.queryByTestId("diferenca")).toBeNull();
   });
 
   it("tooltip do objetivo no ícone de informação", () => {
-    renderCartao(indicador({ objetivo: "Medir a cobertura" } as Partial<Indicador>), { status: "SEM_DADOS" });
+    renderCartao(indicador({ objetivo: "Medir a cobertura" }), { status: "SEM_DADOS" });
     expect(screen.getByTitle("Medir a cobertura")).toBeInTheDocument();
   });
 });
