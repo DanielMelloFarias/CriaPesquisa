@@ -115,7 +115,7 @@
 
 ## Cartão CRIA — Gestante
 
-**Status:** PUBLICADA · **Seções:** 5 · **Perguntas:** 62 · **Obrigatórias:** 16
+**Status:** PUBLICADA · **Seções:** 5 · **Perguntas:** 63 · **Obrigatórias:** 16
 
 ### Identificação
 
@@ -185,21 +185,22 @@
 | 47 | Qual a altura da gestante em metros (atual)? | Número |  | — |
 | 48 | Qual era o peso da gestante antes de engravidar (aproximadamente)?<br><sub>em kg</sub> | Número |  | — |
 | 49 | Qual é o peso atual da gestante?<br><sub>em kg</sub> | Número |  | — |
-| 50 | Nos últimos três meses, os alimentos acabaram antes que você tivesse dinheiro para comprar mais comida? | Escolha única |  | Sim; Não |
-| 51 | Nos últimos três meses, você comeu apenas alguns alimentos que ainda tinha porque o dinheiro acabou? | Escolha única |  | Sim; Não |
-| 52 | A caderneta/carteira de vacinação da gestante está atualizada conforme orientação da unidade de saúde? | Escolha única |  | Sim, está atualizada; Não, está atrasada; Não sabe informar |
-| 53 | Qual o motivo da vacinação não estar atualizada?<br><sub>Pode marcar mais de uma opção</sub> | Múltipla escolha |  | Falta de informação; Dificuldade de acesso à unidade de saúde; Esquecimento / falta de tempo; Orientação médica para adiar; Outro |
+| 50 | Semana gestacional atual<br><sub>Semanas completas de gestação (número inteiro de 1 a 42)</sub> | Número |  | — |
+| 51 | Nos últimos três meses, os alimentos acabaram antes que você tivesse dinheiro para comprar mais comida? | Escolha única |  | Sim; Não |
+| 52 | Nos últimos três meses, você comeu apenas alguns alimentos que ainda tinha porque o dinheiro acabou? | Escolha única |  | Sim; Não |
+| 53 | A caderneta/carteira de vacinação da gestante está atualizada conforme orientação da unidade de saúde? | Escolha única |  | Sim, está atualizada; Não, está atrasada; Não sabe informar |
+| 54 | Qual o motivo da vacinação não estar atualizada?<br><sub>Pode marcar mais de uma opção</sub> | Múltipla escolha |  | Falta de informação; Dificuldade de acesso à unidade de saúde; Esquecimento / falta de tempo; Orientação médica para adiar; Outro |
 
 ### Percepção e Satisfação
 
 | # | Pergunta | Tipo | Obrig. | Opções |
 |---|---|---|:--:|---|
-| 54 | De 1 a 5, quanto o Cartão CRIA contribuiu para o bem-estar da gestante — Segurança financeira<br><sub>Escala de 1 a 5</sub> | Número | ✔ | — |
-| 55 | De 1 a 5, quanto o Cartão CRIA contribuiu para o bem-estar da gestante — Alimentação<br><sub>Escala de 1 a 5</sub> | Número | ✔ | — |
-| 56 | De 1 a 5, quanto o Cartão CRIA contribuiu para o bem-estar da gestante — Saúde da gestante<br><sub>Escala de 1 a 5</sub> | Número | ✔ | — |
-| 57 | De 1 a 5, quanto o Cartão CRIA contribuiu para o bem-estar da gestante — Bem-estar emocional<br><sub>Escala de 1 a 5</sub> | Número | ✔ | — |
-| 58 | O programa Cartão CRIA é de fácil acesso e entendimento? | Escolha única | ✔ | Sim; Parcialmente; Não |
-| 59 | De 1 a 5, quanto a gestante está satisfeita com o Cartão CRIA?<br><sub>1 — Não ajudou; 2 — Ajudou pouco; 3 — Ajudou razoavelmente; 4 — Ajudou bastante; 5 — Ajudou muito</sub> | Número | ✔ | — |
-| 60 | Em uma escala de 0 a 10, o quanto você recomendaria os benefícios do Cartão CRIA para um amigo ou familiar?<br><sub>Escala de 0 a 10</sub> | Número |  | — |
-| 61 | Por qual meio você soube da existência do Cartão CRIA? | Texto |  | — |
-| 62 | Diário de Campo<br><sub>Registro objetivo de percepções observadas durante a entrevista, considerando quando pertinentes: condições do território e da moradia; dinâmica familiar e cuidado com a criança; acesso às políticas públicas; sinais de invisibilização social; segurança alimentar e bem-estar da família e da criança. Sem julgamentos de valor, interpretações pessoais ou diagnósticos clínicos.</sub> | Campo aberto | ✔ | — |
+| 55 | De 1 a 5, quanto o Cartão CRIA contribuiu para o bem-estar da gestante — Segurança financeira<br><sub>Escala de 1 a 5</sub> | Número | ✔ | — |
+| 56 | De 1 a 5, quanto o Cartão CRIA contribuiu para o bem-estar da gestante — Alimentação<br><sub>Escala de 1 a 5</sub> | Número | ✔ | — |
+| 57 | De 1 a 5, quanto o Cartão CRIA contribuiu para o bem-estar da gestante — Saúde da gestante<br><sub>Escala de 1 a 5</sub> | Número | ✔ | — |
+| 58 | De 1 a 5, quanto o Cartão CRIA contribuiu para o bem-estar da gestante — Bem-estar emocional<br><sub>Escala de 1 a 5</sub> | Número | ✔ | — |
+| 59 | O programa Cartão CRIA é de fácil acesso e entendimento? | Escolha única | ✔ | Sim; Parcialmente; Não |
+| 60 | De 1 a 5, quanto a gestante está satisfeita com o Cartão CRIA?<br><sub>1 — Não ajudou; 2 — Ajudou pouco; 3 — Ajudou razoavelmente; 4 — Ajudou bastante; 5 — Ajudou muito</sub> | Número | ✔ | — |
+| 61 | Em uma escala de 0 a 10, o quanto você recomendaria os benefícios do Cartão CRIA para um amigo ou familiar?<br><sub>Escala de 0 a 10</sub> | Número |  | — |
+| 62 | Por qual meio você soube da existência do Cartão CRIA? | Texto |  | — |
+| 63 | Diário de Campo<br><sub>Registro objetivo de percepções observadas durante a entrevista, considerando quando pertinentes: condições do território e da moradia; dinâmica familiar e cuidado com a criança; acesso às políticas públicas; sinais de invisibilização social; segurança alimentar e bem-estar da família e da criança. Sem julgamentos de valor, interpretações pessoais ou diagnósticos clínicos.</sub> | Campo aberto | ✔ | — |
