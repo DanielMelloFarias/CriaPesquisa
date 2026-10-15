@@ -8,6 +8,7 @@ import { UsuarioAvatar } from "./UsuarioAvatar.js";
 const TITULOS: Record<string, string> = {
   "/": "Visão geral",
   "/pesquisas": "Pesquisas",
+  "/indicadores": "Indicadores",
   "/usuarios": "Usuários",
   "/logs": "Auditoria",
 };

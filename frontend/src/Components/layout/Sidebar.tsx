@@ -1,6 +1,6 @@
 import { NavLink } from "react-router-dom";
 import styled from "styled-components";
-import { LayoutDashboard, ClipboardList, Users, ScrollText, type LucideIcon } from "lucide-react";
+import { LayoutDashboard, ClipboardList, Users, ScrollText, Gauge, type LucideIcon } from "lucide-react";
 import { Logo } from "../ui/Logo.js";
 import { UsuarioCard } from "./UsuarioCard.js";
 import { useAuth } from "../../App/auth/useAuth.js";
@@ -23,6 +23,7 @@ const NAV: { grupo: string; itens: ItemNav[] }[] = [
   {
     grupo: "Administração",
     itens: [
+      { to: "/indicadores", rotulo: "Indicadores", Icon: Gauge, papeis: ["ADMIN", "GESTOR"] },
       { to: "/usuarios", rotulo: "Usuários", Icon: Users, papeis: ["ADMIN"] },
       { to: "/logs", rotulo: "Auditoria", Icon: ScrollText, papeis: ["ADMIN"] },
     ],
