@@ -80,6 +80,21 @@ async function conferirPerguntas(tipo: CriarIndicadorInput["tipo"], config: unkn
   }
 }
 
+/**
+ * Indicador ATIVO com recorte ANTES/APÓS: cada `de` precisa ser pergunta da config.
+ * Vale para qualquer tipo (inclusive os que não passam por `conferirPerguntas`); do
+ * contrário a troca não tem efeito e o cenário APÓS sairia igual ao ANTES, em silêncio.
+ */
+function conferirRecorteCompativel(tipo: CriarIndicadorInput["tipo"], config: unknown, recorteConfig?: unknown): void {
+  const substituicoes = recorteConfigSchema.safeParse(recorteConfig);
+  if (!substituicoes.success || substituicoes.data.substituicoes.length === 0) return;
+  const referenciadas = new Set(perguntasReferenciadas(validarConfig(tipo, config)));
+  const incompativeis = substituicoes.data.substituicoes.map((s) => s.de).filter((de) => !referenciadas.has(de));
+  if (incompativeis.length > 0) {
+    throw new HttpError(422, "RECORTE_INCOMPATIVEL", "Recorte troca pergunta que o indicador não usa", { incompativeis });
+  }
+}
+
 /** Traduz violação de unicidade do `codigo` em 409; demais erros seguem. */
 function traduzirErroDeGravacao(erro: unknown): never {
   if (erro instanceof Prisma.PrismaClientKnownRequestError && erro.code === "P2002") {
@@ -129,6 +144,7 @@ export async function criar(req: Request, res: Response) {
   const dependencias = conferirConfig(dados.tipo, dados.config);
   await conferirReferencias(dependencias, dados.pesquisaId);
   await conferirPerguntas(dados.tipo, dados.config, dados.recorteConfig);
+  if ((dados.status ?? "ATIVO") === "ATIVO") conferirRecorteCompativel(dados.tipo, dados.config, dados.recorteConfig);
   await conferirCiclo("__novo__", dependencias);
 
   const indicador = await indicadorModel.criar(dados, usuario.id, dependencias).catch(traduzirErroDeGravacao);
@@ -182,6 +198,7 @@ export async function atualizar(req: Request, res: Response) {
     if (ativando || dados.tipo !== undefined || dados.config !== undefined || dados.recorteConfig !== undefined) {
       await conferirPerguntas(tipo, configFinal, final("recorteConfig"));
     }
+    conferirRecorteCompativel(tipo, configFinal, final("recorteConfig"));
     await conferirCiclo(id, dependencias);
   } else {
     // Rascunho ou inativo: grava a config pela metade (a revisão continua depois).

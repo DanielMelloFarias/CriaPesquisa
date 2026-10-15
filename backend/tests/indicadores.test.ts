@@ -385,6 +385,37 @@ describe("PUT /api/indicadores/:id", () => {
     expect(indicadorModel.atualizar).not.toHaveBeenCalled();
   });
 
+  describe("ativar com recorte ANTES/APÓS gravado", () => {
+    const PAR = { substituicoes: [{ de: "p1", para: "p2" }] };
+
+    it("CONTAGEM {} com par gravado (de não é pergunta da config) -> 422 RECORTE_INCOMPATIVEL", async () => {
+      vi.mocked(indicadorModel.obterPorId).mockResolvedValue({
+        id: "i1", tipo: "CONTAGEM", config: {}, status: "DEFINICAO_INCOMPLETA", motivoIncompleto: "x",
+        recorte: "ANTES_APOS", recorteConfig: PAR,
+      } as never);
+      const res = await request(app)
+        .put("/api/indicadores/i1")
+        .set("Authorization", `Bearer ${tokenGestor}`)
+        .send({ status: "ATIVO" });
+      expect(res.status).toBe(422);
+      expect(res.body.error?.code ?? res.body.code).toBe("RECORTE_INCOMPATIVEL");
+      expect(indicadorModel.atualizar).not.toHaveBeenCalled();
+    });
+
+    it("PROPORCAO cujo par gravado troca a própria pergunta -> 200", async () => {
+      vi.mocked(indicadorModel.obterPorId).mockResolvedValue({
+        id: "i1", tipo: "PROPORCAO", config: CORPO_VALIDO.config, status: "DEFINICAO_INCOMPLETA", motivoIncompleto: "x",
+        recorte: "ANTES_APOS", recorteConfig: PAR,
+      } as never);
+      vi.mocked(indicadorModel.atualizar).mockResolvedValue({ id: "i1", status: "ATIVO" } as never);
+      const res = await request(app)
+        .put("/api/indicadores/i1")
+        .set("Authorization", `Bearer ${tokenGestor}`)
+        .send({ status: "ATIVO" });
+      expect(res.status).toBe(200);
+    });
+  });
+
   describe("regras entre campos valem sobre o registro mesclado (gravado + corpo)", () => {
     const GRAVADO = { id: "i1", tipo: "PROPORCAO", config: CORPO_VALIDO.config, recorte: null, recorteConfig: null };
     const RECORTE_CONFIG = { substituicoes: [{ de: "p1", para: "p2" }] };
