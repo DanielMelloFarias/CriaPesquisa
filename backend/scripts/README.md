@@ -16,6 +16,12 @@ Todos usam o Prisma client (`src/config/prisma.js`) — o Postgres precisa estar
 | `aprovar-existentes.ts` | Aprova respostas que ficaram `PENDENTE`. | Sim |
 | `backup.ts` | Gera `backups/criapesquisa-<data>.dump` e aplica a retenção. | Não (leitura) |
 | `restaurar.ts` | Restaura um `.dump` por cima do banco atual. Exige `--confirmar`. | **Sim — destrutivo** |
+| `adicionar-semana-gestacional.ts` | Acrescenta "Semana gestacional atual" à pesquisa Gestante já publicada. Idempotente. | Sim |
+| `importar-indicadores.ts <arquivo.xlsx>` | Importa os indicadores do Cartão CRIA da planilha (não lê "DtRegistro"/"Usuario"). Tudo entra para revisão. Idempotente. | Sim |
+| `ativar-indicadores-prontos.ts` | Ativa os indicadores com definição pronta, pela mesma validação e auditoria da tela. Idempotente. | Sim |
+| `gerar-referencia-oms.ts <meninos.xlsx> <meninas.xlsx>` | Regera `referencias/oms-imc-idade.json` a partir das tabelas oficiais da OMS. | Não (só escreve o JSON) |
+
+Em produção, rode-os pelo serviço `seed` do compose (ver "Deploy" no README da raiz).
 
 ## Fonte da verdade das pesquisas
 
