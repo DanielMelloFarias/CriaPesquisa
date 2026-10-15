@@ -28,6 +28,7 @@ beforeEach(() => {
   vi.mocked(indicadorModel.grafoDeDependencias).mockResolvedValue(new Map());
   vi.mocked(indicadorModel.idsAtivos).mockImplementation(async (ids: string[]) => ids);
   vi.mocked(indicadorModel.pesquisaExiste).mockResolvedValue(true);
+  vi.mocked(indicadorModel.perguntasPorId).mockResolvedValue([]);
 });
 
 describe("POST /api/indicadores", () => {
@@ -74,6 +75,104 @@ describe("POST /api/indicadores", () => {
 
     expect(res.status).toBe(422);
     expect(indicadorModel.criar).not.toHaveBeenCalled();
+  });
+
+  it("ESCALA com pergunta sem uma das opções nas notas -> 422 PERGUNTA_INCOMPATIVEL", async () => {
+    vi.mocked(indicadorModel.perguntasPorId).mockResolvedValue([
+      { id: "pn", tipo: "ESCOLHA_UNICA", opcoes: ["Antes", "Após", "Não soube"] },
+    ]);
+    const res = await request(app)
+      .post("/api/indicadores")
+      .set("Authorization", `Bearer ${tokenGestor}`)
+      .send({ codigo: "PN", nome: "Pré-natal", tipo: "ESCALA", config: { perguntaId: "pn", notas: { Antes: 100, "Após": 50 } } });
+    expect(res.status).toBe(422);
+    expect(res.body.error.code).toBe("PERGUNTA_INCOMPATIVEL");
+    expect(indicadorModel.criar).not.toHaveBeenCalled();
+  });
+
+  it("ESCALA completa -> 201", async () => {
+    vi.mocked(indicadorModel.perguntasPorId).mockResolvedValue([
+      { id: "pn", tipo: "ESCOLHA_UNICA", opcoes: ["Antes", "Após"] },
+    ]);
+    vi.mocked(indicadorModel.criar).mockResolvedValue({ id: "i1" } as never);
+    const res = await request(app)
+      .post("/api/indicadores")
+      .set("Authorization", `Bearer ${tokenGestor}`)
+      .send({ codigo: "PN", nome: "Pré-natal", tipo: "ESCALA", config: { perguntaId: "pn", notas: { Antes: 100, "Após": 50 } } });
+    expect(res.status).toBe(201);
+    expect(indicadorModel.criar).toHaveBeenCalledOnce();
+  });
+
+  describe("recorte ANTES/APÓS: a pergunta trocada também é conferida", () => {
+    const escalaPareada = {
+      codigo: "PN",
+      nome: "Pré-natal",
+      tipo: "ESCALA",
+      config: { perguntaId: "pnAntes", notas: { Baixa: 0, Alta: 100 } },
+      recorte: "ANTES_APOS",
+      recorteConfig: { substituicoes: [{ de: "pnAntes", para: "pnDepois" }] },
+    };
+
+    it("ESCALA cuja pergunta do APÓS tem opção sem nota -> 422 PERGUNTA_INCOMPATIVEL", async () => {
+      vi.mocked(indicadorModel.perguntasPorId).mockResolvedValue([
+        { id: "pnAntes", tipo: "ESCOLHA_UNICA", opcoes: ["Baixa", "Alta"] },
+        { id: "pnDepois", tipo: "ESCOLHA_UNICA", opcoes: ["Baixa", "Alta", "Nova opção"] },
+      ]);
+      const res = await request(app).post("/api/indicadores").set("Authorization", `Bearer ${tokenGestor}`).send(escalaPareada);
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe("PERGUNTA_INCOMPATIVEL");
+      expect(res.body.error.details.problemas).toEqual(['opção "Nova opção" sem nota']);
+      expect(indicadorModel.criar).not.toHaveBeenCalled();
+    });
+
+    it("ESCALA com as duas perguntas cobertas pelas notas -> 201", async () => {
+      vi.mocked(indicadorModel.perguntasPorId).mockResolvedValue([
+        { id: "pnAntes", tipo: "ESCOLHA_UNICA", opcoes: ["Baixa", "Alta"] },
+        { id: "pnDepois", tipo: "ESCOLHA_UNICA", opcoes: ["Baixa", "Alta"] },
+      ]);
+      vi.mocked(indicadorModel.criar).mockResolvedValue({ id: "i1" } as never);
+      const res = await request(app).post("/api/indicadores").set("Authorization", `Bearer ${tokenGestor}`).send(escalaPareada);
+      expect(res.status).toBe(201);
+    });
+
+    it("PERCENTIL_OMS cuja pergunta de sexo do APÓS não tem a opção feminina -> 422", async () => {
+      vi.mocked(indicadorModel.perguntasPorId).mockResolvedValue([
+        { id: "nasc", tipo: "DATA", opcoes: [] },
+        { id: "sexo", tipo: "ESCOLHA_UNICA", opcoes: ["Masculino", "Feminino"] },
+        { id: "sexo2", tipo: "ESCOLHA_UNICA", opcoes: ["Masculino", "Menina"] },
+      ]);
+      const res = await request(app)
+        .post("/api/indicadores")
+        .set("Authorization", `Bearer ${tokenGestor}`)
+        .send({
+          codigo: "P10",
+          nome: "Abaixo do P10",
+          tipo: "PERCENTIL_OMS",
+          config: {
+            imcIndicadorId: "imc", nascimentoPerguntaId: "nasc", sexoPerguntaId: "sexo",
+            opcoesSexo: { masculino: "Masculino", feminino: "Feminino" }, corte: { abaixoDe: 10 },
+          },
+          recorte: "ANTES_APOS",
+          recorteConfig: { substituicoes: [{ de: "sexo", para: "sexo2" }] },
+        });
+      expect(res.status).toBe(422);
+      expect(res.body.error.details.problemas).toEqual(['opção "Feminino" não existe na pergunta sexo2']);
+    });
+
+    it("PUT só com recorteConfig confere a config gravada no cenário APÓS -> 422", async () => {
+      vi.mocked(indicadorModel.obterPorId).mockResolvedValue({ id: "i1", tipo: "ESCALA", config: escalaPareada.config } as never);
+      vi.mocked(indicadorModel.perguntasPorId).mockResolvedValue([
+        { id: "pnAntes", tipo: "ESCOLHA_UNICA", opcoes: ["Baixa", "Alta"] },
+        { id: "pnDepois", tipo: "ESCOLHA_UNICA", opcoes: ["Baixa", "Alta", "Nova opção"] },
+      ]);
+      const res = await request(app)
+        .put("/api/indicadores/i1")
+        .set("Authorization", `Bearer ${tokenGestor}`)
+        .send({ recorte: "ANTES_APOS", recorteConfig: escalaPareada.recorteConfig });
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe("PERGUNTA_INCOMPATIVEL");
+      expect(indicadorModel.atualizar).not.toHaveBeenCalled();
+    });
   });
 
   it("codigo duplicado (P2002) -> 409 CODIGO_DUPLICADO", async () => {
@@ -193,6 +292,40 @@ describe("PUT /api/indicadores/:id", () => {
     expect(res.status).toBe(409);
     expect(res.body.error.code).toBe("DEPENDENCIA_CIRCULAR");
     expect(indicadorModel.atualizar).not.toHaveBeenCalled();
+  });
+
+  describe("conferência das perguntas só quando tipo/config vêm no corpo", () => {
+    const gravado = { id: "i1", tipo: "ESCALA", config: { perguntaId: "pn", notas: { Antes: 100 } } };
+    const pergunta = { id: "pn", tipo: "ESCOLHA_UNICA" as const, opcoes: ["Antes", "Após"] };
+    const put = (corpo: object) =>
+      request(app).put("/api/indicadores/i1").set("Authorization", `Bearer ${tokenGestor}`).send(corpo);
+
+    it("só renomear indicador cuja pergunta ganhou opção -> 200 sem consultar perguntas", async () => {
+      vi.mocked(indicadorModel.obterPorId).mockResolvedValue(gravado as never);
+      vi.mocked(indicadorModel.perguntasPorId).mockResolvedValue([pergunta]);
+      vi.mocked(indicadorModel.atualizar).mockResolvedValue({ id: "i1" } as never);
+      const res = await put({ nome: "Novo nome" });
+      expect(res.status).toBe(200);
+      expect(indicadorModel.perguntasPorId).not.toHaveBeenCalled();
+    });
+
+    it("corpo com config incompleta -> 422 PERGUNTA_INCOMPATIVEL", async () => {
+      vi.mocked(indicadorModel.obterPorId).mockResolvedValue(gravado as never);
+      vi.mocked(indicadorModel.perguntasPorId).mockResolvedValue([pergunta]);
+      const res = await put({ config: { perguntaId: "pn", notas: { Antes: 100 } } });
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe("PERGUNTA_INCOMPATIVEL");
+      expect(indicadorModel.atualizar).not.toHaveBeenCalled();
+    });
+
+    it("corpo só com tipo e config gravada incompatível -> 422 PERGUNTA_INCOMPATIVEL", async () => {
+      vi.mocked(indicadorModel.obterPorId).mockResolvedValue(gravado as never);
+      vi.mocked(indicadorModel.perguntasPorId).mockResolvedValue([pergunta]);
+      const res = await put({ tipo: "ESCALA" });
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe("PERGUNTA_INCOMPATIVEL");
+      expect(indicadorModel.atualizar).not.toHaveBeenCalled();
+    });
   });
 
   it("codigo duplicado na edição (P2002) -> 409", async () => {

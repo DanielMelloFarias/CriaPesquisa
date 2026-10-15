@@ -6,8 +6,11 @@ import {
   type TipoIndicador,
 } from "../indicadorConfig.js";
 import { ordenarPorDependencia } from "../dependencias.js";
-import { avaliar } from "./avaliadores.js";
+import { avaliar, opcaoSemNota } from "./avaliadores.js";
 import { agregar, classificar, agregarDistribuicao, type ResultadoIndicador } from "./agregacao.js";
+import { estatisticas } from "./padronizacao.js";
+import { classificarAtalah, FAIXAS_ATALAH } from "./referencias/atalah.js";
+import { imcPlausivel } from "./imc.js";
 import type { RespostaAvaliavel, ValorIndividual } from "./tipos.js";
 
 /**
@@ -39,10 +42,18 @@ export type ResultadoComRecorte = ResultadoIndicador | { antes: ResultadoIndicad
 type Substituicoes = Array<{ de: string; para: string }>;
 
 /** Tipos que só existem na agregação: `avaliar` devolve null para eles (avaliadores.ts). */
-const TIPOS_SEM_VALOR_INDIVIDUAL: ReadonlySet<TipoIndicador> = new Set(["CLASSIFICACAO", "CONTAGEM", "DISTRIBUICAO"]);
+const TIPOS_SEM_VALOR_INDIVIDUAL: ReadonlySet<TipoIndicador> = new Set([
+  "CLASSIFICACAO",
+  "CONTAGEM",
+  "DISTRIBUICAO",
+  "ATALAH",
+]);
+
+/** Tipos que podem fornecer o IMC (kg/m²) de PERCENTIL_OMS e ATALAH. */
+const TIPOS_IMC: ReadonlySet<TipoIndicador> = new Set(["MEDIA", "DERIVADA"]);
 
 /** Troca as perguntas do recorte, para avaliar o mesmo indicador no outro cenário. */
-function aplicarSubstituicoes(config: ConfigIndicador, substituicoes: Substituicoes): ConfigIndicador {
+export function aplicarSubstituicoes(config: ConfigIndicador, substituicoes: Substituicoes): ConfigIndicador {
   const mapa = new Map(substituicoes.map((s) => [s.de, s.para]));
   const trocar = (id: string) => mapa.get(id) ?? id;
 
@@ -53,6 +64,14 @@ function aplicarSubstituicoes(config: ConfigIndicador, substituicoes: Substituic
       return { ...config, perguntaId: trocar(config.perguntaId) };
     case "CRUZAMENTO":
       return { ...config, condicoes: config.condicoes.map((c) => ({ ...c, perguntaId: trocar(c.perguntaId) })) };
+    case "ESCALA":
+      return { ...config, perguntaId: trocar(config.perguntaId) };
+    case "META_POR_IDADE":
+      return { ...config, perguntaId: trocar(config.perguntaId), nascimentoPerguntaId: trocar(config.nascimentoPerguntaId) };
+    case "PERCENTIL_OMS":
+      return { ...config, nascimentoPerguntaId: trocar(config.nascimentoPerguntaId), sexoPerguntaId: trocar(config.sexoPerguntaId) };
+    case "ATALAH":
+      return { ...config, semanaPerguntaId: trocar(config.semanaPerguntaId) };
     case "DERIVADA":
       return {
         ...config,
@@ -67,7 +86,8 @@ function aplicarSubstituicoes(config: ConfigIndicador, substituicoes: Substituic
 type LerValores = (indicadorId: string) => ValorIndividual[] | undefined;
 
 /**
- * `noEscopo[i]` diz se a resposta i é da pesquisa do indicador. Os vetores
+ * `noEscopo[i]` diz se a resposta i é da pesquisa do indicador e está na
+ * máscara do painel. Os vetores
  * nunca são filtrados — só anulados —, para que valores[i] continue sendo
  * a resposta i em quem depende deste indicador.
  */
@@ -94,6 +114,27 @@ function agregarPorTipo(
     case "CONTAGEM":
       // Não há valor individual: cada resposta da pesquisa conta uma vez.
       return agregar(config, noEscopo.map((dentro) => (dentro ? 1 : null)), casasDecimais);
+    case "ATALAH": {
+      // Cada gestante cai numa das quatro faixas da semana dela. Reaproveita o
+      // `classificar` (maior resto) com a posição da faixa como valor: 0.5, 1.5, ...
+      const imcs = lerValores(config.imcIndicadorId) ?? [];
+      const posicoes = respostas.map((r, i) => {
+        if (!noEscopo[i]) return null;
+        const imc = imcs[i];
+        const semana = r.itens.get(config.semanaPerguntaId)?.valorNumero;
+        if (imc === null || imc === undefined || typeof semana !== "number") return null;
+        // IMC fora de [8, 60] ou não finito não é medida (altura em cm dá ≈ 0,002):
+        // sem isto cairia em "Baixo peso" ou "Obesidade".
+        if (!imcPlausivel(imc)) return null;
+        const faixa = classificarAtalah(imc, semana);
+        return faixa === null ? null : FAIXAS_ATALAH.indexOf(faixa) + 0.5;
+      });
+      return classificar(
+        posicoes,
+        FAIXAS_ATALAH.map((rotulo, i) => ({ rotulo, de: i, ate: i + 1 })),
+        casasDecimais,
+      );
+    }
     default:
       return agregar(config, valores, casasDecimais);
   }
@@ -103,6 +144,7 @@ export function calcular(
   indicadores: IndicadorParaCalculo[],
   respostas: RespostaAvaliavel[],
   perguntasExistentes: Set<string>,
+  mascara: boolean[] = respostas.map(() => true),
 ): Map<string, ResultadoComRecorte> {
   const porId = new Map(indicadores.map((i) => [i.id, i]));
 
@@ -153,6 +195,21 @@ export function calcular(
       continue;
     }
 
+    // Fora da pesquisa do indicador vale como branco. A avaliação usa `daPesquisa`
+    // (a referência do ZSCORE é a pesquisa inteira); a agregação usa `noEscopo`,
+    // que também respeita a máscara do painel.
+    const daPesquisa = respostas.map((r) => indicador.pesquisaId == null || r.pesquisaId === indicador.pesquisaId);
+
+    // 3b. Escala que não conhece uma opção marcada: a pergunta ganhou opção depois
+    //     do cadastro. Tratar como branco tiraria gente do denominador em silêncio.
+    if (config.tipo === "ESCALA") {
+      const semNota = opcaoSemNota(config, respostas.filter((_, i) => daPesquisa[i]));
+      if (semNota) {
+        marcarIncompleto(id, `opção "${semNota}" sem nota na escala`, id);
+        continue;
+      }
+    }
+
     // 4. Dependência fora do conjunto calculado (inativa, apagada): sem ela não há número.
     const dependencias = indicadoresReferenciados(config);
     const ausente = dependencias.find((dep) => !porId.has(dep));
@@ -186,6 +243,28 @@ export function calcular(
       continue;
     }
 
+    // 5c. ZSCORE não está em 0–100: somá-lo num COMPOSTO ou classificá-lo em faixas
+    //     de 0–100 daria número plausível e errado.
+    if (config.tipo === "COMPOSTO" || config.tipo === "CLASSIFICACAO") {
+      const zDep = dependencias.find((dep) => porId.get(dep)!.tipo === "ZSCORE");
+      if (zDep) {
+        marcarIncompleto(id, `depende de ${zDep}, que não está em 0–100`, id, zDep);
+        continue;
+      }
+    }
+
+    // 5d. PERCENTIL_OMS e ATALAH comparam o IMC com tabelas em kg/m². IMC é pergunta
+    //     numérica (MEDIA) ou peso÷altura² (DERIVADA); qualquer outro tipo (z-score,
+    //     0–100, …) daria número plausível e errado.
+    if (config.tipo === "PERCENTIL_OMS" || config.tipo === "ATALAH") {
+      const dep = config.imcIndicadorId;
+      const tipo = porId.get(dep)!.tipo;
+      if (!TIPOS_IMC.has(tipo)) {
+        marcarIncompleto(id, `depende de ${dep}, do tipo ${tipo}, que não é um IMC`, id, dep);
+        continue;
+      }
+    }
+
     // 6. Recorte ANTES/APÓS: o par precisa existir de fato.
     const pareado = indicador.recorte === "ANTES_APOS";
     const depPareada = dependencias.find((dep) => valoresApos.has(dep));
@@ -217,14 +296,45 @@ export function calcular(
         marcarIncompleto(id, `pergunta ${faltandoApos} não existe mais`, id);
         continue;
       }
+      // 6b. A mesma regra do 3b no cenário APÓS: a pergunta trocada também pode ter
+      //     ganhado opção sem nota, e o APÓS sairia com o denominador encolhido.
+      if (configApos.tipo === "ESCALA") {
+        const semNotaApos = opcaoSemNota(configApos, respostas.filter((_, i) => daPesquisa[i]));
+        if (semNotaApos) {
+          marcarIncompleto(id, `opção "${semNotaApos}" sem nota na escala`, id);
+          continue;
+        }
+      }
     }
 
-    // Fora da pesquisa do indicador vale como branco: sai do numerador e do denominador.
-    const noEscopo = respostas.map((r) => indicador.pesquisaId == null || r.pesquisaId === indicador.pesquisaId);
+    const noEscopo = daPesquisa.map((dentro, i) => dentro && mascara[i] === true);
 
     const calcularCenario = (cfg: ConfigIndicador, lerValores: LerValores) => {
+      // ZSCORE: a referência de cada componente é a pesquisa inteira do indicador
+      // (daPesquisa), nunca a máscara do painel — senão a média do recorte seria zero.
+      // `lerValores` é o do cenário: no pareado, o APÓS padroniza contra o APÓS.
+      const referencias =
+        cfg.tipo === "ZSCORE"
+          ? cfg.componentes.map((c) => {
+              const vetor = lerValores(c.indicadorId) ?? [];
+              const base = vetor.filter((v, i): v is number => daPesquisa[i] && v !== null && Number.isFinite(v));
+              return { ...c, vetor, est: estatisticas(base) };
+            })
+          : null;
+
       const valores = respostas.map((resposta, indice) => {
-        if (!noEscopo[indice]) return null;
+        if (!daPesquisa[indice]) return null;
+        if (referencias) {
+          let soma = 0;
+          let pesos = 0;
+          for (const c of referencias) {
+            const v = c.vetor[indice];
+            if (!c.est || v === null || v === undefined) return null;
+            soma += ((v - c.est.media) / c.est.desvio) * c.peso;
+            pesos += c.peso;
+          }
+          return soma / pesos;
+        }
         const deps = new Map<string, ValorIndividual>();
         for (const depId of dependencias) {
           // Posição, não busca: o valor do MCC da criança i está em valores[i].
@@ -232,7 +342,9 @@ export function calcular(
         }
         return avaliar(cfg, resposta, deps);
       });
-      return { valores, resultado: agregarPorTipo(cfg, valores, respostas, noEscopo, indicador.casasDecimais, lerValores) };
+      // `valores` (sem máscara) é o que os dependentes leem; só a agregação é mascarada.
+      const naAgregacao = valores.map((v, i) => (noEscopo[i] ? v : null));
+      return { valores, resultado: agregarPorTipo(cfg, naAgregacao, respostas, noEscopo, indicador.casasDecimais, lerValores) };
     };
 
     const antes = calcularCenario(config, (dep) => valoresAntes.get(dep));

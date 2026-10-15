@@ -490,6 +490,14 @@ describe("indicador com pesquisaId considera só as respostas daquela pesquisa",
     });
   });
 
+  it("dependente sem pesquisaId lê branco nas respostas fora da pesquisa da dependência", () => {
+    // vcras só da criança; o composto vê todas, mas as gestantes chegam a ele em branco.
+    const vcrasPc = ind({ id: "vcras", tipo: "PROPORCAO", config: { perguntaId: "cras", opcoesNumerador: ["Sim"] }, pesquisaId: "pc" });
+    const geral = ind({ id: "geral", tipo: "COMPOSTO", config: { termos: [{ indicadorId: "vcras", peso: 1 }], divisor: 1 } });
+    // A=100, B=0 -> 50. Se as gestantes (todas Sim) vazassem, daria 80.
+    expect(calcular([vcrasPc, geral], respostas, PERGUNTAS).get("geral")).toEqual({ status: "OK", valor: 50 });
+  });
+
   it("indicador sem pesquisaId continua usando todas as respostas", () => {
     const r = calcular(
       [
@@ -501,5 +509,489 @@ describe("indicador com pesquisaId considera só as respostas daquela pesquisa",
     );
     expect(r.get("total")).toEqual({ status: "OK", valor: 5 });
     expect(r.get("vcras")).toEqual({ status: "OK", valor: 80 });
+  });
+});
+
+describe("máscara do painel", () => {
+  const indicadores = [
+    ind({ id: "vcras", tipo: "PROPORCAO", config: { perguntaId: "cras", opcoesNumerador: ["Sim"] } }),
+    ind({ id: "total", tipo: "CONTAGEM", config: {} }),
+    ind({ id: "mccM", tipo: "COMPOSTO", config: { termos: [{ indicadorId: "vcras", peso: 1 }], divisor: 1 } }),
+  ];
+  const respostas = [crianca("A", "Sim", "Sim", "Sim"), crianca("B", "Não", "Sim", "Não"), crianca("C", "Sim", "Não", "Sim")];
+  let comMascara: Map<string, unknown>;
+  let semMascara: Map<string, unknown>;
+
+  beforeAll(() => {
+    comMascara = calcular(indicadores, respostas, PERGUNTAS, [true, true, false]);
+    semMascara = calcular(indicadores, respostas.slice(0, 2), PERGUNTAS);
+  });
+
+  it("agrega só quem está na máscara", () => {
+    expect(comMascara.get("vcras")).toEqual({ status: "OK", valor: 50 });
+    expect(comMascara.get("total")).toEqual({ status: "OK", valor: 2 });
+    expect(comMascara.get("mccM")).toEqual({ status: "OK", valor: 50 });
+  });
+
+  it("dá o mesmo número que filtrar as respostas antes", () => {
+    expect(comMascara).toEqual(semMascara);
+  });
+
+  it("sem máscara: todas", () => {
+    expect(calcular(indicadores, respostas, PERGUNTAS).get("total")).toEqual({ status: "OK", valor: 3 });
+  });
+});
+
+describe("máscara do painel não muda número de tipo antigo (Review Focus 1)", () => {
+  // Todos os tipos antigos juntos, com pareamento ANTES/APÓS próprio (vcras) e herdado
+  // (mcc, faixasMcc), CLASSIFICACAO sobre COMPOSTO simples e pareado, e escopo de pesquisa.
+  const perguntas = new Set(["crasA", "crasD", "vac", "n", "cor"]);
+  const indicadores = [
+    ind({
+      id: "vcras",
+      tipo: "PROPORCAO",
+      config: { perguntaId: "crasA", opcoesNumerador: ["Sim"] },
+      recorte: "ANTES_APOS",
+      recorteConfig: { substituicoes: [{ de: "crasA", para: "crasD" }] },
+    }),
+    ind({ id: "cvac", tipo: "PROPORCAO", config: { perguntaId: "vac", opcoesNumerador: ["Sim"] } }),
+    ind({ id: "media", tipo: "MEDIA", config: { perguntaId: "n" } }),
+    ind({ id: "total", tipo: "CONTAGEM", config: {} }),
+    ind({ id: "totalPc", tipo: "CONTAGEM", config: {}, pesquisaId: "pc" }),
+    ind({ id: "dist", tipo: "DISTRIBUICAO", config: { perguntaId: "cor" } }),
+    ind({
+      id: "mcc",
+      tipo: "COMPOSTO",
+      config: { termos: [{ indicadorId: "vcras", peso: 3 }, { indicadorId: "cvac", peso: 5 }], divisor: 8 },
+    }),
+    ind({
+      id: "faixasMcc",
+      tipo: "CLASSIFICACAO",
+      config: { indicadorId: "mcc", faixas: [{ rotulo: "Baixo", de: 0, ate: 50 }, { rotulo: "Alto", de: 50, ate: 100 }] },
+    }),
+    ind({ id: "soVac", tipo: "COMPOSTO", config: { termos: [{ indicadorId: "cvac", peso: 1 }], divisor: 1 }, pesquisaId: "pc" }),
+    ind({
+      id: "faixasSoVac",
+      tipo: "CLASSIFICACAO",
+      config: { indicadorId: "soVac", faixas: [{ rotulo: "Baixo", de: 0, ate: 50 }, { rotulo: "Alto", de: 50, ate: 100 }] },
+    }),
+  ];
+  const r = (id: string, pesquisa: string, crasA: string, crasD: string, vac: string, n: number | null, cor: string) =>
+    montarResposta(
+      id,
+      [
+        { perguntaId: "crasA", opcoesSelecionadas: [crasA] },
+        { perguntaId: "crasD", opcoesSelecionadas: [crasD] },
+        { perguntaId: "vac", opcoesSelecionadas: [vac] },
+        { perguntaId: "n", valorNumero: n },
+        { perguntaId: "cor", opcoesSelecionadas: [cor] },
+      ],
+      pesquisa,
+    );
+  const respostas = [
+    r("A", "pc", "Sim", "Sim", "Sim", 10, "Azul"),
+    r("B", "pc", "Não", "Sim", "Não", 0, "Verde"),
+    r("C", "pc", "Não", "Não", "Sim", 7, "Azul"),
+    r("D", "pg", "Não", "Não", "Não", null, "Verde"),
+    r("E", "pc", "Não", "Sim", "Sim", 3, "Verde"),
+    r("F", "pg", "Sim", "Sim", "Sim", 1, "Azul"),
+  ];
+  const mascara = [true, false, true, false, true, true];
+
+  it("calcular(todas, máscara) == calcular(só as da máscara), indicador por indicador", () => {
+    const comMascara = calcular(indicadores, respostas, perguntas, mascara);
+    const filtradas = calcular(indicadores, respostas.filter((_, i) => mascara[i]), perguntas);
+    for (const { id } of indicadores) {
+      expect(comMascara.get(id), id).toEqual(filtradas.get(id));
+    }
+    expect(comMascara).toEqual(filtradas);
+  });
+
+  it("a máscara de fato muda o número (o teste acima não é vácuo)", () => {
+    const comMascara = calcular(indicadores, respostas, perguntas, mascara);
+    const todas = calcular(indicadores, respostas, perguntas);
+    for (const id of ["vcras", "mcc", "faixasMcc", "faixasSoVac", "media", "total", "dist"]) {
+      expect(comMascara.get(id), id).not.toEqual(todas.get(id));
+    }
+    // E os pareados continuam pareados.
+    expect(comMascara.get("vcras")).toHaveProperty("apos");
+    expect(comMascara.get("faixasMcc")).toHaveProperty("apos");
+  });
+});
+
+describe("ESCALA no calcular", () => {
+  it("opção marcada sem nota vira INCOMPLETO, não zero", () => {
+    const cpre = ind({ id: "cpre", tipo: "ESCALA", config: { perguntaId: "cras", notas: { Sim: 100, "Não": 0 } } });
+    const respostas = [
+      montarResposta("a", [{ perguntaId: "cras", opcoesSelecionadas: ["Sim"] }]),
+      montarResposta("b", [{ perguntaId: "cras", opcoesSelecionadas: ["Talvez"] }]),
+    ];
+    expect(calcular([cpre], respostas, PERGUNTAS).get("cpre")).toEqual({
+      status: "INCOMPLETO",
+      motivo: 'opção "Talvez" sem nota na escala',
+    });
+  });
+  it("média das notas", () => {
+    const cpre = ind({ id: "cpre", tipo: "ESCALA", config: { perguntaId: "cras", notas: { Sim: 100, "Não": 50, Talvez: null } } });
+    const respostas = ["Sim", "Não", "Talvez"].map((o, i) => montarResposta(String(i), [{ perguntaId: "cras", opcoesSelecionadas: [o] }]));
+    expect(calcular([cpre], respostas, PERGUNTAS).get("cpre")).toEqual({ status: "OK", valor: 75 });
+  });
+  it("opção sem nota em resposta de outra pesquisa não trava o indicador", () => {
+    const cpre = ind({ id: "cpre", tipo: "ESCALA", pesquisaId: "P1", config: { perguntaId: "cras", notas: { Sim: 100 } } });
+    const respostas = [
+      montarResposta("a", [{ perguntaId: "cras", opcoesSelecionadas: ["Sim"] }], "P1"),
+      montarResposta("b", [{ perguntaId: "cras", opcoesSelecionadas: ["Talvez"] }], "P2"),
+    ];
+    expect(calcular([cpre], respostas, PERGUNTAS).get("cpre")).toEqual({ status: "OK", valor: 100 });
+  });
+  it("pareada: opção sem nota só na pergunta do APÓS também vira INCOMPLETO", () => {
+    // Sem a guarda no APÓS: a sai do denominador em silêncio e o APÓS vira 100 (b sozinho).
+    const cpre = ind({
+      id: "cpre",
+      tipo: "ESCALA",
+      config: { perguntaId: "antes", notas: { Baixa: 0, Alta: 100 } },
+      recorte: "ANTES_APOS",
+      recorteConfig: { substituicoes: [{ de: "antes", para: "depois" }] },
+    });
+    const respostas = [
+      montarResposta("a", [
+        { perguntaId: "antes", opcoesSelecionadas: ["Baixa"] },
+        { perguntaId: "depois", opcoesSelecionadas: ["Nova opção"] },
+      ]),
+      montarResposta("b", [
+        { perguntaId: "antes", opcoesSelecionadas: ["Alta"] },
+        { perguntaId: "depois", opcoesSelecionadas: ["Alta"] },
+      ]),
+    ];
+    expect(calcular([cpre], respostas, new Set(["antes", "depois"])).get("cpre")).toEqual({
+      status: "INCOMPLETO",
+      motivo: 'opção "Nova opção" sem nota na escala',
+    });
+  });
+});
+
+/**
+ * ZSCORE à mão. X = [10, 20, 30] (média 20, desvio 10) -> z = [-1, 0, 1].
+ * Y = [5, 5, 20] (média 10, desvio √75 = 8.660254) -> z = [-0.577350, -0.577350, 1.154701].
+ * Índice (pesos iguais) = média dos z = [-0.788675, -0.288675, 1.077350]; média geral = 0.
+ * Com a máscara só na 3ª resposta, o recorte vale 1.08 — a referência continua sendo as três.
+ */
+describe("ZSCORE", () => {
+  const P = new Set(["x", "y"]);
+  const base = [
+    ind({ id: "x", tipo: "MEDIA", config: { perguntaId: "x" } }),
+    ind({ id: "y", tipo: "MEDIA", config: { perguntaId: "y" } }),
+    ind({ id: "ise", tipo: "ZSCORE", config: { componentes: [{ indicadorId: "x", peso: 1 }, { indicadorId: "y", peso: 1 }] } }),
+  ];
+  const r = (id: string, x: number | null, y: number) =>
+    montarResposta(id, [...(x === null ? [] : [{ perguntaId: "x", valorNumero: x }]), { perguntaId: "y", valorNumero: y }]);
+  const tres = [r("a", 10, 5), r("b", 20, 5), r("c", 30, 20)];
+
+  it("média geral da referência é zero", () => {
+    // Soma de ponto flutuante pode dar -0 ou 1e-17: confere o valor com tolerância, não com toEqual.
+    const r = calcular(base, tres, P).get("ise") as { status: string; valor: number };
+    expect(r.status).toBe("OK");
+    expect(Math.abs(r.valor)).toBeLessThan(0.005);
+  });
+
+  it("recorte filtrado compara com a pesquisa inteira", () => {
+    expect(calcular(base, tres, P, [false, false, true]).get("ise")).toEqual({ status: "OK", valor: 1.08 });
+  });
+
+  it("indivíduo sem um componente fica fora, e sai da referência daquele componente", () => {
+    // X só tem a e c: [10, 30] -> média 20, desvio √200; z_a = -0.707107, z_c = 0.707107.
+    // Y das três: z como acima. b não tem X -> null. Índice: a = (-0.707107 - 0.577350)/2, c = (0.707107 + 1.154701)/2.
+    const res = calcular(base, [r("a", 10, 5), r("b", null, 5), r("c", 30, 20)], P).get("ise");
+    const esperado = ((-0.707107 - 0.57735) / 2 + (0.707107 + 1.154701) / 2) / 2;
+    expect(res).toEqual({ status: "OK", valor: Math.round(esperado * 100) / 100 });
+  });
+
+  it("referência pequena = SEM_DADOS", () => {
+    expect(calcular(base, [r("a", 10, 5)], P).get("ise")).toEqual({ status: "SEM_DADOS" });
+  });
+
+  it("ZSCORE como termo de COMPOSTO ou fonte de CLASSIFICACAO = INCOMPLETO", () => {
+    const comp = ind({ id: "c", tipo: "COMPOSTO", config: { termos: [{ indicadorId: "ise", peso: 1 }], divisor: 1 } });
+    const cls = ind({ id: "k", tipo: "CLASSIFICACAO", config: { indicadorId: "ise", faixas: [{ rotulo: "a", de: -5, ate: 5 }] } });
+    const res = calcular([...base, comp, cls], tres, P);
+    expect(res.get("c")).toEqual({ status: "INCOMPLETO", motivo: "depende de ise, que não está em 0–100", dependencia: "ise" });
+    expect(res.get("k")).toEqual({ status: "INCOMPLETO", motivo: "depende de ise, que não está em 0–100", dependencia: "ise" });
+  });
+
+  /**
+   * Pareado: cada cenário padroniza contra a referência do mesmo cenário.
+   * ANTES X = [10, 20, 30] (média 20, desvio 10): z_c = 1 -> recorte só em c = 1.
+   * APÓS  X = [30, 30, 60] (média 40, desvio √300 = 17.320508): z_c = 20/17.320508 = 1.154701 -> 1.15.
+   * Com a referência do ANTES no APÓS, z_c seria (60 − 20)/10 = 4.
+   */
+  it("pareado: cada cenário padroniza contra a referência do próprio cenário", () => {
+    const PP = new Set(["xA", "xD"]);
+    const indicadores = [
+      ind({
+        id: "x",
+        tipo: "MEDIA",
+        config: { perguntaId: "xA" },
+        recorte: "ANTES_APOS",
+        recorteConfig: { substituicoes: [{ de: "xA", para: "xD" }] },
+      }),
+      ind({ id: "ise", tipo: "ZSCORE", config: { componentes: [{ indicadorId: "x", peso: 1 }] } }),
+    ];
+    const respostas = [
+      [10, 30],
+      [20, 30],
+      [30, 60],
+    ].map(([a, d], i) =>
+      montarResposta(String(i), [
+        { perguntaId: "xA", valorNumero: a },
+        { perguntaId: "xD", valorNumero: d },
+      ]),
+    );
+    expect(calcular(indicadores, respostas, PP, [false, false, true]).get("ise")).toEqual({
+      antes: { status: "OK", valor: 1 },
+      apos: { status: "OK", valor: 1.15 },
+    });
+  });
+});
+
+/** Semana 20 do Quadro 19 (atalah.json): baixo peso ≤ 21,5; sobrepeso ≥ 26,4; obesidade ≥ 31,1. */
+describe("ATALAH", () => {
+  const P = new Set(["imcAtual", "semana"]);
+  const inds = [
+    ind({ id: "imc", tipo: "MEDIA", config: { perguntaId: "imcAtual" } }),
+    ind({ id: "atalah", tipo: "ATALAH", config: { imcIndicadorId: "imc", semanaPerguntaId: "semana" } }),
+  ];
+  const g = (id: string, imc: number, semana?: number) =>
+    montarResposta(id, [{ perguntaId: "imcAtual", valorNumero: imc }, ...(semana === undefined ? [] : [{ perguntaId: "semana", valorNumero: semana }])]);
+
+  it("% por faixa, sem semana fora da conta", () => {
+    const res = calcular(inds, [g("a", 21.0, 20), g("b", 22.0, 20), g("c", 27.0, 20), g("d", 32.0, 20), g("e", 22.0)], P);
+    expect(res.get("atalah")).toEqual({
+      status: "OK_FAIXAS",
+      faixas: [
+        { rotulo: "Baixo peso", percentual: 25 },
+        { rotulo: "Adequado", percentual: 25 },
+        { rotulo: "Sobrepeso", percentual: 25 },
+        { rotulo: "Obesidade", percentual: 25 },
+      ],
+    });
+  });
+
+  it("semana fora da tabela também fica fora da conta", () => {
+    const res = calcular(inds, [g("a", 21.0, 20), g("b", 22.0, 3), g("c", 22.0, 20.5)], P);
+    expect(res.get("atalah")).toEqual({
+      status: "OK_FAIXAS",
+      faixas: [
+        { rotulo: "Baixo peso", percentual: 100 },
+        { rotulo: "Adequado", percentual: 0 },
+        { rotulo: "Sobrepeso", percentual: 0 },
+        { rotulo: "Obesidade", percentual: 0 },
+      ],
+    });
+  });
+
+  it("IMC zero ou negativo não conta (não vira Baixo peso)", () => {
+    const res = calcular(inds, [g("a", 32.0, 20), g("b", 0, 20), g("c", -5, 20)], P);
+    expect(res.get("atalah")).toEqual({
+      status: "OK_FAIXAS",
+      faixas: [
+        { rotulo: "Baixo peso", percentual: 0 },
+        { rotulo: "Adequado", percentual: 0 },
+        { rotulo: "Sobrepeso", percentual: 0 },
+        { rotulo: "Obesidade", percentual: 100 },
+      ],
+    });
+  });
+
+  it("IMC implausível (fora de 8–60 kg/m²) não conta: nem Baixo peso nem Obesidade", () => {
+    // 0,002 = altura digitada em cm; 75 = erro de digitação. Só a fica na conta (Adequado).
+    const res = calcular(inds, [g("a", 22.0, 20), g("b", 0.002, 20), g("c", 75, 20)], P);
+    expect(res.get("atalah")).toEqual({
+      status: "OK_FAIXAS",
+      faixas: [
+        { rotulo: "Baixo peso", percentual: 0 },
+        { rotulo: "Adequado", percentual: 100 },
+        { rotulo: "Sobrepeso", percentual: 0 },
+        { rotulo: "Obesidade", percentual: 0 },
+      ],
+    });
+  });
+
+  it("IMC pareado: o APÓS usa o IMC do APÓS", () => {
+    const PP = new Set(["imcAtual", "imcDepois", "semana"]);
+    const imcPareado = ind({
+      id: "imc",
+      tipo: "MEDIA",
+      config: { perguntaId: "imcAtual" },
+      recorte: "ANTES_APOS",
+      recorteConfig: { substituicoes: [{ de: "imcAtual", para: "imcDepois" }] },
+    });
+    // Semana 20: ANTES 21,0 → Baixo peso (≤ 21,5); APÓS 32,0 → Obesidade (≥ 31,1).
+    const resp = montarResposta("a", [
+      { perguntaId: "imcAtual", valorNumero: 21 },
+      { perguntaId: "imcDepois", valorNumero: 32 },
+      { perguntaId: "semana", valorNumero: 20 },
+    ]);
+    const faixas = (baixo: number, obes: number) => ({
+      status: "OK_FAIXAS",
+      faixas: [
+        { rotulo: "Baixo peso", percentual: baixo },
+        { rotulo: "Adequado", percentual: 0 },
+        { rotulo: "Sobrepeso", percentual: 0 },
+        { rotulo: "Obesidade", percentual: obes },
+      ],
+    });
+    expect(calcular([imcPareado, inds[1]], [resp], PP).get("atalah")).toEqual({ antes: faixas(100, 0), apos: faixas(0, 100) });
+  });
+
+  it("ninguém com semana = SEM_DADOS", () => {
+    expect(calcular(inds, [g("a", 22)], P).get("atalah")).toEqual({ status: "SEM_DADOS" });
+  });
+
+  it("máscara do painel tira a gestante da conta", () => {
+    const res = calcular(inds, [g("a", 21.0, 20), g("b", 32.0, 20)], P, [false, true]);
+    expect(res.get("atalah")).toMatchObject({ faixas: [{ percentual: 0 }, { percentual: 0 }, { percentual: 0 }, { percentual: 100 }] });
+  });
+
+  it("ATALAH não serve de termo de COMPOSTO (sem valor individual)", () => {
+    const comp = ind({ id: "c", tipo: "COMPOSTO", config: { termos: [{ indicadorId: "atalah", peso: 1 }], divisor: 1 } });
+    expect(calcular([...inds, comp], [g("a", 22, 20)], P).get("c")).toMatchObject({ status: "INCOMPLETO", dependencia: "atalah" });
+  });
+
+  it("recorte ANTES/APÓS troca a pergunta da semana", () => {
+    const PP = new Set(["imcAtual", "semana", "semana2"]);
+    const pareado = ind({
+      id: "atalah",
+      tipo: "ATALAH",
+      config: { imcIndicadorId: "imc", semanaPerguntaId: "semana" },
+      recorte: "ANTES_APOS",
+      recorteConfig: { substituicoes: [{ de: "semana", para: "semana2" }] },
+    });
+    // IMC 32 na semana 20 → Obesidade (≥ 31,1).
+    const resposta = montarResposta("a", [
+      { perguntaId: "imcAtual", valorNumero: 32 },
+      { perguntaId: "semana", valorNumero: 20 },
+    ]);
+    // Sem a semana2 respondida, o APÓS não tem ninguém: a troca aconteceu de fato.
+    expect(calcular([inds[0], pareado], [resposta], PP).get("atalah")).toEqual({
+      antes: { status: "OK_FAIXAS", faixas: [
+        { rotulo: "Baixo peso", percentual: 0 },
+        { rotulo: "Adequado", percentual: 0 },
+        { rotulo: "Sobrepeso", percentual: 0 },
+        { rotulo: "Obesidade", percentual: 100 },
+      ] },
+      apos: { status: "SEM_DADOS" },
+    });
+  });
+});
+
+describe("PERCENTIL_OMS no calcular", () => {
+  const P = new Set(["imcCrianca", "nasc", "sexo"]);
+  const percentil = (imcIndicadorId: string) =>
+    ind({
+      id: "p85",
+      tipo: "PERCENTIL_OMS",
+      config: {
+        imcIndicadorId, nascimentoPerguntaId: "nasc", sexoPerguntaId: "sexo",
+        opcoesSexo: { masculino: "Masculino", feminino: "Feminino" }, corte: { acimaDe: 85 },
+      },
+    });
+  const imc = ind({ id: "imc", tipo: "MEDIA", config: { perguntaId: "imcCrianca" } });
+  const crianca = (id: string, v: number, sexo = "Masculino") =>
+    montarResposta(
+      id,
+      [
+        { perguntaId: "imcCrianca", valorNumero: v },
+        { perguntaId: "nasc", valorData: new Date("2025-01-01") },
+        { perguntaId: "sexo", opcoesSelecionadas: [sexo] },
+      ],
+      null,
+      { enviadaEm: new Date("2026-01-01T12:00:00Z") },
+    );
+
+  it("% de crianças acima do P85; sexo fora das opções sai do denominador", () => {
+    // Menino de 365 d: 19,9 > +2 DP (19,8267) → 100; 16,7992 = mediana → 0; Intersexo → null.
+    const res = calcular([imc, percentil("imc")], [crianca("a", 19.9), crianca("b", 16.7992), crianca("c", 19.9, "Intersexo")], P);
+    expect(res.get("p85")).toEqual({ status: "OK", valor: 50 });
+  });
+
+  it.each([
+    ["sexo", "sexo2"],
+    ["nasc", "nasc2"],
+  ])("recorte ANTES/APÓS troca a pergunta %s", (de, para) => {
+    const pareado = { ...percentil("imc"), recorte: "ANTES_APOS" as const, recorteConfig: { substituicoes: [{ de, para }] } };
+    const PP = new Set([...P, "sexo2", "nasc2"]);
+    // A pergunta do APÓS não foi respondida: se a troca não acontecer, o APÓS repete o ANTES.
+    expect(calcular([imc, pareado], [crianca("a", 19.9)], PP).get("p85")).toEqual({
+      antes: { status: "OK", valor: 100 },
+      apos: { status: "SEM_DADOS" },
+    });
+  });
+
+  it("IMC vindo de um ZSCORE = INCOMPLETO (z-score não é IMC)", () => {
+    const z = ind({ id: "z", tipo: "ZSCORE", config: { componentes: [{ indicadorId: "imc", peso: 1 }] } });
+    const at = ind({ id: "at", tipo: "ATALAH", config: { imcIndicadorId: "z", semanaPerguntaId: "nasc" } });
+    const res = calcular([imc, z, percentil("z"), at], [crianca("a", 19.9), crianca("b", 16.7992)], P);
+    const esperado = { status: "INCOMPLETO", motivo: "depende de z, do tipo ZSCORE, que não é um IMC", dependencia: "z" };
+    expect(res.get("p85")).toEqual(esperado);
+    expect(res.get("at")).toEqual(esperado);
+  });
+
+  it("IMC vindo de uma PROPORCAO (0–100) = INCOMPLETO", () => {
+    const prop = ind({ id: "pr", tipo: "PROPORCAO", config: { perguntaId: "sexo", opcoesNumerador: ["Masculino"] } });
+    const at = ind({ id: "at", tipo: "ATALAH", config: { imcIndicadorId: "pr", semanaPerguntaId: "nasc" } });
+    const res = calcular([prop, percentil("pr"), at], [crianca("a", 19.9)], P);
+    const esperado = { status: "INCOMPLETO", motivo: "depende de pr, do tipo PROPORCAO, que não é um IMC", dependencia: "pr" };
+    expect(res.get("p85")).toEqual(esperado);
+    expect(res.get("at")).toEqual(esperado);
+  });
+
+  it("IMC vindo de DERIVADA (peso ÷ altura²) é aceito", () => {
+    const PD = new Set([...P, "peso", "altura"]);
+    const der = ind({
+      id: "imcD",
+      tipo: "DERIVADA",
+      config: {
+        variaveis: { p: "peso", a: "altura" },
+        expressao: { op: "/", esq: { var: "p" }, dir: { op: "*", esq: { var: "a" }, dir: { var: "a" } } },
+      },
+    });
+    // 19,9 kg/m² = 19,9 kg ÷ 1 m²: acima do +2 DP aos 365 dias.
+    const resp = montarResposta(
+      "a",
+      [
+        { perguntaId: "peso", valorNumero: 19.9 },
+        { perguntaId: "altura", valorNumero: 1 },
+        { perguntaId: "nasc", valorData: new Date("2025-01-01") },
+        { perguntaId: "sexo", opcoesSelecionadas: ["Masculino"] },
+      ],
+      null,
+      { enviadaEm: new Date("2026-01-01T12:00:00Z") },
+    );
+    expect(calcular([der, percentil("imcD")], [resp], PD).get("p85")).toEqual({ status: "OK", valor: 100 });
+  });
+
+  it("IMC pareado: o APÓS do percentil usa o IMC do APÓS", () => {
+    const PP = new Set([...P, "imcDepois"]);
+    const imcPareado = {
+      ...imc,
+      recorte: "ANTES_APOS" as const,
+      recorteConfig: { substituicoes: [{ de: "imcCrianca", para: "imcDepois" }] },
+    };
+    // ANTES 16,7992 (mediana, não passa do P85); APÓS 19,9 (> +2 DP, passa).
+    const resp = montarResposta(
+      "a",
+      [
+        { perguntaId: "imcCrianca", valorNumero: 16.7992 },
+        { perguntaId: "imcDepois", valorNumero: 19.9 },
+        { perguntaId: "nasc", valorData: new Date("2025-01-01") },
+        { perguntaId: "sexo", opcoesSelecionadas: ["Masculino"] },
+      ],
+      null,
+      { enviadaEm: new Date("2026-01-01T12:00:00Z") },
+    );
+    expect(calcular([imcPareado, percentil("imc")], [resp], PP).get("p85")).toEqual({
+      antes: { status: "OK", valor: 0 },
+      apos: { status: "OK", valor: 100 },
+    });
   });
 });

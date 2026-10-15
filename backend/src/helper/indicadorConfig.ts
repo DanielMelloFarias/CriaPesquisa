@@ -89,6 +89,66 @@ const classificacao = z.object({
 const contagem = z.object({ tipo: z.literal("CONTAGEM") }).strict();
 const distribuicao = z.object({ tipo: z.literal("DISTRIBUICAO"), perguntaId: id }).strict();
 
+const nota = z.number().finite().min(0).max(100);
+
+const escala = z.object({
+  tipo: z.literal("ESCALA"),
+  perguntaId: id,
+  // null = opção fora do cálculo (ex.: "Não soube informar").
+  notas: z.record(z.string().min(1), nota.nullable()).refine((n) => Object.keys(n).length > 0, {
+    message: "escala precisa de ao menos uma opção",
+  }),
+}).strict();
+
+const faixaIdade = z.object({
+  deMeses: z.number().int().min(0),
+  // null = faixa aberta ("24 meses ou mais"); só a última pode ser aberta.
+  ateMeses: z.number().int().positive().nullable(),
+  esperado: z.number().finite().positive(),
+}).strict();
+
+const metaPorIdade = z.object({
+  tipo: z.literal("META_POR_IDADE"),
+  perguntaId: id,
+  nascimentoPerguntaId: id,
+  faixas: z
+    .array(faixaIdade)
+    .min(1)
+    .refine((fs) => fs.every((f) => f.ateMeses === null || f.deMeses < f.ateMeses), { message: "faixa com início maior ou igual ao fim" })
+    .refine((fs) => fs.every((f, i) => f.ateMeses !== null || i === fs.length - 1), { message: "só a última faixa pode ser aberta" })
+    .refine((fs) => fs.every((f, i) => i === 0 || (fs[i - 1].ateMeses ?? Infinity) <= f.deMeses), {
+      message: "faixas devem estar em ordem crescente e sem sobreposição",
+    }),
+}).strict();
+
+const zscore = z.object({
+  tipo: z.literal("ZSCORE"),
+  componentes: z.array(z.object({ indicadorId: id, peso: z.number().finite().positive() }).strict()).min(1),
+}).strict();
+
+const percentil = z.number().finite().min(1).max(99);
+
+const percentilOms = z.object({
+  tipo: z.literal("PERCENTIL_OMS"),
+  imcIndicadorId: id,
+  nascimentoPerguntaId: id,
+  sexoPerguntaId: id,
+  opcoesSexo: z
+    .object({ masculino: z.string().min(1), feminino: z.string().min(1) })
+    .strict()
+    .refine((o) => o.masculino !== o.feminino, { message: "opções de sexo precisam ser diferentes" }),
+  corte: z.union([
+    z.object({ abaixoDe: percentil }).strict(),
+    z.object({ acimaDe: percentil }).strict(),
+  ]),
+}).strict();
+
+const atalah = z.object({
+  tipo: z.literal("ATALAH"),
+  imcIndicadorId: id,
+  semanaPerguntaId: id,
+}).strict();
+
 const esquemas = {
   PROPORCAO: proporcao,
   CRUZAMENTO: cruzamento,
@@ -98,6 +158,11 @@ const esquemas = {
   CLASSIFICACAO: classificacao,
   CONTAGEM: contagem,
   DISTRIBUICAO: distribuicao,
+  ESCALA: escala,
+  META_POR_IDADE: metaPorIdade,
+  ZSCORE: zscore,
+  PERCENTIL_OMS: percentilOms,
+  ATALAH: atalah,
 } as const;
 
 export type TipoIndicador = keyof typeof esquemas;
@@ -127,7 +192,14 @@ export function perguntasReferenciadas(config: ConfigIndicador): string[] {
     case "PROPORCAO":
     case "MEDIA":
     case "DISTRIBUICAO":
+    case "ESCALA":
       return [config.perguntaId];
+    case "META_POR_IDADE":
+      return [config.perguntaId, config.nascimentoPerguntaId];
+    case "PERCENTIL_OMS":
+      return [config.nascimentoPerguntaId, config.sexoPerguntaId];
+    case "ATALAH":
+      return [config.semanaPerguntaId];
     case "CRUZAMENTO":
       return config.condicoes.map((c) => c.perguntaId);
     case "DERIVADA":
@@ -138,7 +210,17 @@ export function perguntasReferenciadas(config: ConfigIndicador): string[] {
 }
 
 export function indicadoresReferenciados(config: ConfigIndicador): string[] {
-  if (config.tipo === "COMPOSTO") return config.termos.map((t) => t.indicadorId);
-  if (config.tipo === "CLASSIFICACAO") return [config.indicadorId];
-  return [];
+  switch (config.tipo) {
+    case "COMPOSTO":
+      return config.termos.map((t) => t.indicadorId);
+    case "ZSCORE":
+      return config.componentes.map((c) => c.indicadorId);
+    case "CLASSIFICACAO":
+      return [config.indicadorId];
+    case "PERCENTIL_OMS":
+    case "ATALAH":
+      return [config.imcIndicadorId];
+    default:
+      return [];
+  }
 }

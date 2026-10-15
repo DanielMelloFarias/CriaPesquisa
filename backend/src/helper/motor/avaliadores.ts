@@ -1,4 +1,7 @@
 import type { ConfigIndicador, NoExpressao } from "../indicadorConfig.js";
+import { mesesCompletos, diasCompletos, dataLocalAlagoas } from "./idade.js";
+import { lmsImcParaIdade, zscoreLms, percentilDeZ, type Sexo } from "./referencias/oms.js";
+import { imcPlausivel } from "./imc.js";
 import type { ItemAvaliavel, RespostaAvaliavel, ValorIndividual } from "./tipos.js";
 
 export type { ItemAvaliavel, RespostaAvaliavel, ValorIndividual };
@@ -17,13 +20,21 @@ export function montarResposta(
   id: string,
   itens: Array<ItemAvaliavel & { perguntaId: string }>,
   pesquisaId: string | null = null,
+  extras: { enviadaEm?: Date | null; municipio?: string | null; regional?: string | null } = {},
 ): RespostaAvaliavel {
   const mapa = new Map<string, ItemAvaliavel>();
   for (const { perguntaId, ...item } of itens) {
     if (mapa.has(perguntaId)) throw new ItemDuplicado(id, perguntaId);
     mapa.set(perguntaId, item);
   }
-  return { id, pesquisaId, itens: mapa };
+  return {
+    id,
+    pesquisaId,
+    enviadaEm: extras.enviadaEm ?? null,
+    municipio: extras.municipio ?? null,
+    regional: extras.regional ?? null,
+    itens: mapa,
+  };
 }
 
 /** Zero é resposta; branco é ausência. Confundir os dois muda o denominador. */
@@ -50,6 +61,19 @@ function avaliarExpressao(no: NoExpressao, valores: Map<string, number>): number
     case "*": return esq * dir;
     case "/": return dir === 0 ? Number.NaN : esq / dir;
   }
+}
+
+/** Primeira opção marcada que a escala não conhece; null se todas têm nota (ou são "fora"). */
+export function opcaoSemNota(
+  config: Extract<ConfigIndicador, { tipo: "ESCALA" }>,
+  respostas: RespostaAvaliavel[],
+): string | null {
+  for (const resposta of respostas) {
+    for (const opcao of opcoes(resposta.itens.get(config.perguntaId))) {
+      if (!Object.hasOwn(config.notas, opcao)) return opcao;
+    }
+  }
+  return null;
 }
 
 export function avaliar(
@@ -112,7 +136,48 @@ export function avaliar(
       return finitoOuNulo(soma / config.divisor);
     }
 
-    // CLASSIFICACAO, CONTAGEM e DISTRIBUICAO não produzem valor individual:
+    case "ESCALA": {
+      const selecionadas = opcoes(resposta.itens.get(config.perguntaId));
+      if (selecionadas.length !== 1) return null;
+      const nota = config.notas[selecionadas[0]];
+      // undefined = opção sem nota: o calcular marca o indicador INCOMPLETO antes de agregar.
+      return nota === undefined ? null : nota;
+    }
+
+    case "META_POR_IDADE": {
+      const consultas = resposta.itens.get(config.perguntaId);
+      const nascimento = resposta.itens.get(config.nascimentoPerguntaId)?.valorData;
+      if (!temNumero(consultas) || !nascimento || !resposta.enviadaEm) return null;
+      // Consultas negativas são erro de digitação: o teto de 100 não as pegaria.
+      if (consultas.valorNumero < 0) return null;
+      const meses = mesesCompletos(nascimento, dataLocalAlagoas(resposta.enviadaEm));
+      if (meses < 0) return null;
+      const faixa = config.faixas.find((f) => meses >= f.deMeses && (f.ateMeses === null || meses < f.ateMeses));
+      if (!faixa) return null;
+      return Math.min(100, (consultas.valorNumero / faixa.esperado) * 100);
+    }
+
+    case "PERCENTIL_OMS": {
+      const imc = valoresDependencias.get(config.imcIndicadorId);
+      const nascimento = resposta.itens.get(config.nascimentoPerguntaId)?.valorData;
+      const marcadas = opcoes(resposta.itens.get(config.sexoPerguntaId));
+      if (imc === null || imc === undefined || !nascimento || !resposta.enviadaEm || marcadas.length !== 1) return null;
+      // Opção fora das configuradas (ex.: "Intersexo") não vira menino nem menina.
+      const sexo: Sexo | null =
+        marcadas[0] === config.opcoesSexo.masculino ? "masculino" :
+        marcadas[0] === config.opcoesSexo.feminino ? "feminino" : null;
+      if (!sexo) return null;
+      // IMC fora de [8, 60] ou não finito: erro de digitação (altura em cm), não criança.
+      // Com IMC ≤ 0 o LMS ainda daria NaN/−Infinity, que o corte leria como número.
+      if (!imcPlausivel(imc)) return null;
+      // Dia de vida no calendário de Alagoas; fora da tabela (negativo ou > 1856) = null.
+      const lms = lmsImcParaIdade(sexo, diasCompletos(nascimento, dataLocalAlagoas(resposta.enviadaEm)));
+      if (!lms) return null;
+      const p = percentilDeZ(zscoreLms(imc, lms));
+      return "abaixoDe" in config.corte ? (p < config.corte.abaixoDe ? 100 : 0) : (p > config.corte.acimaDe ? 100 : 0);
+    }
+
+    // CLASSIFICACAO, CONTAGEM, DISTRIBUICAO e ATALAH não produzem valor individual:
     // existem só na agregação.
     default:
       return null;

@@ -157,6 +157,7 @@ const indicadorBaseSchema = z.object({
   tipo: z.enum([
     "PROPORCAO", "CRUZAMENTO", "MEDIA", "DERIVADA",
     "COMPOSTO", "CLASSIFICACAO", "CONTAGEM", "DISTRIBUICAO",
+    "ESCALA", "META_POR_IDADE", "ZSCORE", "PERCENTIL_OMS", "ATALAH",
   ]),
   unidade: z.string().optional(),
   casasDecimais: z.number().int().min(0).max(4).default(1),

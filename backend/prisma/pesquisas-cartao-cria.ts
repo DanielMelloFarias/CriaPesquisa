@@ -232,6 +232,7 @@ export const secoesGestante: SecaoDef[] = [
       { enunciado: "Qual a altura da gestante em metros (atual)?", tipo: "NUMERO" },
       { enunciado: "Qual era o peso da gestante antes de engravidar (aproximadamente)?", tipo: "NUMERO", ajuda: "em kg" },
       { enunciado: "Qual é o peso atual da gestante?", tipo: "NUMERO", ajuda: "em kg" },
+      { enunciado: "Semana gestacional atual", tipo: "NUMERO", ajuda: "Semanas completas de gestação (número inteiro de 1 a 42)" },
       { enunciado: "Nos últimos três meses, os alimentos acabaram antes que você tivesse dinheiro para comprar mais comida?", tipo: "ESCOLHA_UNICA", opcoes: simNao },
       { enunciado: "Nos últimos três meses, você comeu apenas alguns alimentos que ainda tinha porque o dinheiro acabou?", tipo: "ESCOLHA_UNICA", opcoes: simNao },
       { enunciado: "A caderneta/carteira de vacinação da gestante está atualizada conforme orientação da unidade de saúde?", tipo: "ESCOLHA_UNICA", opcoes: ["Sim, está atualizada", "Não, está atrasada", "Não sabe informar"] },
