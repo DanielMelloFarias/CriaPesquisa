@@ -170,8 +170,8 @@ function Corpo({ exibicao, podeRevisar, id }: { exibicao: Exibicao; podeRevisar:
       return exibicao.grafico === "ROSCA" ? (
         <DonutInterativo
           labels={exibicao.itens.map((i) => i.opcao)}
-          data={exibicao.itens.map((i) => i.percentual)}
-          unidade="%"
+          data={exibicao.itens.map((i) => i.contagem)}
+          unidade="respostas"
           altura={220}
           semCard
         />
@@ -222,10 +222,13 @@ export function CartaoIndicador({
             <TituloColuna>Antes do Cartão CRIA</TituloColuna>
             <Corpo exibicao={modelo.antes} podeRevisar={podeRevisar} id={indicador.id} />
           </div>
-          {modelo.diferenca !== undefined && (
+          {modelo.diferenca !== undefined ? (
             <Tag $tone="blue" role="status" data-testid="diferenca" aria-label="Diferença entre antes e após">
               {modelo.diferenca}
             </Tag>
+          ) : (
+            // Mantém a trilha do meio do grid ocupada: "Após" fica na terceira coluna.
+            <span aria-hidden="true" data-testid="sem-diferenca" />
           )}
           <div>
             <TituloColuna>Após o Cartão CRIA</TituloColuna>

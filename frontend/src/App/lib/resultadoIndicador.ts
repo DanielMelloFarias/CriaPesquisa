@@ -11,7 +11,7 @@ export type ResultadoComRecorte = Resultado | { antes: Resultado; apos: Resultad
 export type Exibicao =
   | { forma: "NUMERO"; texto: string; legenda?: string; meta?: { texto: string; atingida: boolean } }
   | { forma: "FAIXAS"; faixas: Array<{ rotulo: string; percentual: number }> }
-  | { forma: "DISTRIBUICAO"; itens: Array<{ opcao: string; percentual: number }>; grafico: "ROSCA" | "BARRAS" }
+  | { forma: "DISTRIBUICAO"; itens: Array<{ opcao: string; contagem: number; percentual: number }>; grafico: "ROSCA" | "BARRAS" }
   | { forma: "SEM_DADOS" }
   | { forma: "INCOMPLETO"; motivo: string };
 export type ExibicaoIndicador =
@@ -43,6 +43,10 @@ function textoDoNumero(ind: IndicadorFormato, valor: number): string {
   return TIPOS_PERCENTUAIS.has(ind.tipo) ? `${base}%` : base;
 }
 
+function somaPercentuais(itens: Array<{ percentual: number }>): number {
+  return itens.reduce((soma, i) => soma + i.percentual, 0);
+}
+
 function exibir(ind: IndicadorFormato, r: Resultado | undefined): Exibicao {
   if (!r) return { forma: "INCOMPLETO", motivo: "sem resultado do cálculo" };
   switch (r.status) {
@@ -67,8 +71,9 @@ function exibir(ind: IndicadorFormato, r: Resultado | undefined): Exibicao {
     case "OK_DISTRIBUICAO":
       return {
         forma: "DISTRIBUICAO",
-        itens: r.itens.map((i) => ({ opcao: i.opcao, percentual: i.percentual })),
-        grafico: r.itens.length <= 6 ? "ROSCA" : "BARRAS",
+        itens: r.itens.map((i) => ({ opcao: i.opcao, contagem: i.contagem, percentual: i.percentual })),
+        // Múltipla escolha (soma > 100%) não é parte de um todo: rosca mentiria.
+        grafico: r.itens.length <= 6 && somaPercentuais(r.itens) <= 100.5 ? "ROSCA" : "BARRAS",
       };
     case "SEM_DADOS":
       return { forma: "SEM_DADOS" };

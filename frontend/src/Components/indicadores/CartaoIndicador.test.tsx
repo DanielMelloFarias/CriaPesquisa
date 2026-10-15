@@ -8,8 +8,8 @@ import type { ResultadoComRecorte } from "../../App/lib/resultadoIndicador.js";
 
 // jsdom não tem ResizeObserver (exigido pelo Chart.js): troca a rosca por um stub que expõe os dados.
 vi.mock("../charts/DonutInterativo.js", () => ({
-  DonutInterativo: (p: { semCard?: boolean; labels: string[]; data: number[] }) => (
-    <div data-testid="rosca" data-labels={p.labels.join("|")} data-data={p.data.join("|")} data-semcard={String(p.semCard)}/>
+  DonutInterativo: (p: { semCard?: boolean; labels: string[]; data: number[]; unidade: string }) => (
+    <div data-testid="rosca" data-labels={p.labels.join("|")} data-data={p.data.join("|")} data-semcard={String(p.semCard)} data-unidade={p.unidade}/>
   ),
 }));
 
@@ -70,7 +70,9 @@ describe("CartaoIndicador", () => {
     });
     const rosca = screen.getByTestId("rosca");
     expect(rosca).toHaveAttribute("data-labels", "Sim|Não|Talvez");
-    expect(rosca).toHaveAttribute("data-data", "50|30|20");
+    // A rosca recebe contagens (total no centro em respostas); percentuais ficam na legenda.
+    expect(rosca).toHaveAttribute("data-data", "5|3|2");
+    expect(rosca).toHaveAttribute("data-unidade", "respostas");
     expect(rosca).toHaveAttribute("data-semcard", "true");
   });
 
@@ -112,6 +114,13 @@ describe("CartaoIndicador", () => {
     expect(screen.getByText("Sem respostas aprovadas neste recorte")).toBeInTheDocument();
     expect(screen.getByText("55,0%")).toBeInTheDocument();
     expect(screen.queryByTestId("diferenca")).toBeNull();
+    // Sem selo, a trilha do meio fica com um espaço vazio: "Após" continua na 3ª coluna.
+    const colunaAntes = screen.getByText("Antes do Cartão CRIA").parentElement!;
+    const colunaApos = screen.getByText("Após o Cartão CRIA").parentElement!;
+    const grid = colunaAntes.parentElement!;
+    expect(colunaApos.parentElement).toBe(grid);
+    expect(Array.from(grid.children).indexOf(colunaAntes)).toBe(0);
+    expect(Array.from(grid.children).indexOf(colunaApos)).toBe(2);
   });
 
   it("tooltip do objetivo no ícone de informação", () => {

@@ -98,7 +98,10 @@ export function PainelIndicadores() {
 
   const titulos = new Map((pesquisas?.itens ?? []).map((p) => [p.id, p.titulo]));
 
-  const daAba = (ativos.data ?? []).filter((i) => (i.apresentacao.length === 0 ? aba === "Escopo" : i.apresentacao.includes(aba)));
+  const daAba = (ativos.data ?? [])
+    .filter((i) => (i.apresentacao.length === 0 ? aba === "Escopo" : i.apresentacao.includes(aba)))
+    // Filtro de pesquisa: só a seção dela e a de "Ambas as pesquisas".
+    .filter((i) => !filtros.pesquisaId || i.pesquisaId === null || i.pesquisaId === filtros.pesquisaId);
   const porPesquisa = new Map<string | null, Indicador[]>();
   for (const i of daAba) {
     const lista = porPesquisa.get(i.pesquisaId) ?? [];
@@ -234,7 +237,7 @@ export function PainelIndicadores() {
 
       {calculo.isError && <Banner $tone="warn" role="alert" style={{ marginBottom: 16 }}>{mensagemDeErro(calculo.error)}</Banner>}
 
-      {calculo.isLoading ? (
+      {calculo.isError ? null : calculo.isLoading ? (
         <Muted>Calculando…</Muted>
       ) : secoes.length === 0 ? (
         <Muted>Nenhum indicador nesta aba.</Muted>

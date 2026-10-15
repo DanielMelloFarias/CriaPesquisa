@@ -35,7 +35,7 @@ beforeEach(() => {
     JSON.stringify({ id: "1", nome: "Ana", email: "ana@exemplo.local", papel: "VISUALIZADOR", precisaTrocarSenha: false }),
   );
   getSpy.mockImplementation((async (url: string) => {
-    if (url === "/pesquisas") return { data: { itens: [{ id: "p1", titulo: "Criança", status: "PUBLICADA" }] } };
+    if (url === "/pesquisas") return { data: { itens: [{ id: "p1", titulo: "Criança", status: "PUBLICADA" }, { id: "p2", titulo: "Gestante", status: "PUBLICADA" }] } };
     if (url === "/regionais") return { data: { regionais: ["1ª Regional"] } };
     if (url === "/indicadores/calculo") return calculo();
     if (url === "/indicadores") return { data: { itens: ativos, total: ativos.length, page: 1, pageSize: 200, contadores: {} } };
@@ -95,10 +95,33 @@ describe("PainelIndicadores", () => {
         response: { status: 409, data: { error: { code: "DEPENDENCIA_CIRCULAR", message: "dependência circular entre indicadores: a → b → a" } } },
       };
     };
+    // ADMIN: o link "Revisar indicador" apareceria se algum cartão fosse renderizado.
+    localStorage.setItem(
+      "usuario",
+      JSON.stringify({ id: "1", nome: "Ana", email: "ana@exemplo.local", papel: "ADMIN", precisaTrocarSenha: false }),
+    );
     renderTela();
     expect(await screen.findByText(/dependência circular entre indicadores: a → b → a/, undefined, { timeout: 4000 })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Escopo" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Perfil" })).toBeInTheDocument();
+    // Erro no cálculo: só o aviso, nenhum cartão "Não calculável" nem link de revisão.
+    expect(screen.queryByText(/Não calculável/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Revisar indicador")).not.toBeInTheDocument();
+    expect(screen.queryByText("Cobertura vacinal")).not.toBeInTheDocument();
+  });
+
+  it("filtro de pesquisa mostra só a seção dela e a de 'Ambas as pesquisas'", async () => {
+    ativos = [...ITENS, { ...base, id: "i3", codigo: "IND-3", nome: "Pré-natal", pesquisaId: "p2", apresentacao: ["Escopo"] }];
+    renderTela();
+    expect(await screen.findByRole("heading", { name: "Gestante" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Criança" })).toBeInTheDocument();
+
+    await userEvent.selectOptions(screen.getByLabelText("Pesquisa"), "p2");
+    await waitFor(() => expect(screen.queryByRole("heading", { name: "Criança" })).not.toBeInTheDocument());
+    expect(screen.queryByText("Cobertura vacinal")).not.toBeInTheDocument();
+    expect(await screen.findByText("Pré-natal")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Gestante" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Ambas as pesquisas" })).toBeInTheDocument();
   });
 
   it("sem indicadores ativos mostra a mensagem de vazio", async () => {

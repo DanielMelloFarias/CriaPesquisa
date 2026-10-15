@@ -34,6 +34,13 @@ describe("formatarResultado", () => {
     expect(formatarResultado(ind("DISTRIBUICAO"), { status: "OK_DISTRIBUICAO", itens: itens(6) })).toMatchObject({ exibicao: { grafico: "ROSCA" } });
     expect(formatarResultado(ind("DISTRIBUICAO"), { status: "OK_DISTRIBUICAO", itens: itens(7) })).toMatchObject({ exibicao: { grafico: "BARRAS" } });
   });
+  it("distribuição de múltipla escolha (soma > 100,5%) vai para barras e mantém a contagem", () => {
+    const multipla = [{ opcao: "a", contagem: 6, percentual: 60 }, { opcao: "b", contagem: 5, percentual: 50 }];
+    expect(formatarResultado(ind("DISTRIBUICAO"), { status: "OK_DISTRIBUICAO", itens: multipla })).toEqual({
+      pareado: false, exibicao: { forma: "DISTRIBUICAO", itens: multipla, grafico: "BARRAS" } });
+    const arredondada = [{ opcao: "a", contagem: 1, percentual: 33.4 }, { opcao: "b", contagem: 1, percentual: 33.4 }, { opcao: "c", contagem: 1, percentual: 33.4 }];
+    expect(formatarResultado(ind("DISTRIBUICAO"), { status: "OK_DISTRIBUICAO", itens: arredondada })).toMatchObject({ exibicao: { grafico: "ROSCA" } });
+  });
   it("pareado com diferença em p.p.", () =>
     expect(formatarResultado(ind("PROPORCAO"), { antes: { status: "OK", valor: 40 }, apos: { status: "OK", valor: 52.5 } })).toMatchObject({
       pareado: true, diferenca: "+12,5 p.p." }));
