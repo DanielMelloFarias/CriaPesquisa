@@ -48,9 +48,9 @@
 | `backend/src/helper/motor/idade.ts` (novo) | idade em meses e dias completos (UTC) |
 | `backend/src/helper/motor/padronizacao.ts` (novo) | média/desvio amostral e z-score do ZSCORE |
 | `backend/src/helper/motor/referencias/oms.ts` (novo) | LMS por dia, z-score LMS, Φ(z) |
-| `backend/src/helper/motor/referencias/oms-imc-idade.json` (gerado) | tabela LMS OMS, meninos e meninas, 0–1856 dias |
-| `backend/src/helper/motor/referencias/atalah.ts` + `atalah.json` (novo) | classificação de Atalah por semana |
-| `backend/src/helper/motor/referencias/README.md` (novo) | fontes, data de obtenção, como regenerar |
+| `backend/referencias/oms-imc-idade.json` (gerado) | tabela LMS OMS, meninos e meninas, 0–1856 dias |
+| `backend/src/helper/motor/referencias/atalah.ts` (novo) + `backend/referencias/atalah.json` | classificação de Atalah por semana |
+| `backend/referencias/README.md` (novo) | fontes, data de obtenção, como regenerar |
 | `backend/scripts/gerar-referencia-oms.ts` (novo) | gera o JSON da OMS a partir dos xlsx oficiais |
 | `backend/src/helper/motor/calcular.ts` (mod) | máscara do painel; ZSCORE; ATALAH; guardas novas; substituições dos tipos novos |
 | `backend/src/helper/recortePainel.ts` (novo) | máscara pura: quais respostas casam com os filtros |
@@ -1083,11 +1083,13 @@ git commit -m "feat: indicador ZSCORE padronizado contra a propria pesquisa"
 
 **Files:**
 - Create: `backend/scripts/gerar-referencia-oms.ts`
-- Create: `backend/src/helper/motor/referencias/oms-imc-idade.json` (gerado pelo script)
+- Create: `backend/referencias/oms-imc-idade.json` (gerado pelo script)
 - Create: `backend/src/helper/motor/referencias/oms.ts`
-- Create: `backend/src/helper/motor/referencias/atalah.json`
+- Create: `backend/referencias/atalah.json`
 - Create: `backend/src/helper/motor/referencias/atalah.ts`
-- Create: `backend/src/helper/motor/referencias/README.md`
+- Create: `backend/referencias/README.md`
+- Create: `backend/src/helper/motor/referencias/ler.ts`
+- Modify: `backend/Dockerfile` (copiar `referencias/` para a imagem)
 - Test: `backend/tests/referencias.test.ts` (novo)
 
 **Interfaces:**
@@ -1116,7 +1118,7 @@ Run: `curl -sL -o /tmp/bfa-boys.xlsx "<URL meninos>" && curl -sL -o /tmp/bfa-gir
 - [ ] **Step 2: Script gerador** — `backend/scripts/gerar-referencia-oms.ts`:
 
 ```ts
-// Gera src/helper/motor/referencias/oms-imc-idade.json a partir das tabelas
+// Gera referencias/oms-imc-idade.json a partir das tabelas
 // oficiais da OMS (BMI-for-age, expanded tables, z-scores por dia).
 // Uso: npx tsx scripts/gerar-referencia-oms.ts <meninos.xlsx> <meninas.xlsx>
 import ExcelJS from "exceljs";
@@ -1151,7 +1153,7 @@ const saida = {
   masculino: await ler(meninos),
   feminino: await ler(meninas),
 };
-const destino = fileURLToPath(new URL("../src/helper/motor/referencias/oms-imc-idade.json", import.meta.url));
+const destino = fileURLToPath(new URL("../referencias/oms-imc-idade.json", import.meta.url));
 writeFileSync(destino, JSON.stringify(saida));
 console.log(`gravado ${destino}`);
 ```
@@ -1159,7 +1161,7 @@ console.log(`gravado ${destino}`);
 Run: `cd backend && npx tsx scripts/gerar-referencia-oms.ts <caminho>/bfa-boys.xlsx <caminho>/bfa-girls.xlsx`
 Expected: `gravado .../oms-imc-idade.json` (~120 KB).
 
-- [ ] **Step 3: `atalah.json`** — crie `backend/src/helper/motor/referencias/atalah.json` com exatamente este conteúdo (transcrito do Quadro 19 via `pdftotext`; o teste do Step 5 confere pontos contra o PDF):
+- [ ] **Step 3: `atalah.json`** — crie `backend/referencias/atalah.json` com exatamente este conteúdo (transcrito do Quadro 19 via `pdftotext`; o teste do Step 5 confere pontos contra o PDF):
 
 ```json
 [
@@ -1270,15 +1272,30 @@ describe("Atalah (Quadro 19, SISVAN 2011)", () => {
 Run: `cd backend && npx vitest run tests/referencias.test.ts`
 Expected: FAIL — módulos não existem.
 
-- [ ] **Step 6: Implement** — `backend/src/helper/motor/referencias/oms.ts`:
+- [ ] **Step 6: Implement**
+
+Por que não `import x from "./tabela.json"`: o `tsconfig` usa `module: ES2022`, que não aceita o atributo `with { type: "json" }`, e sem o atributo o Node de produção recusa o import do JSON (`ERR_IMPORT_ATTRIBUTE_MISSING`) — funcionaria no vitest e quebraria só na imagem. Os dados ficam em `backend/referencias/` e são lidos do disco. `src/helper/motor/referencias/x.ts` e `dist/helper/motor/referencias/x.js` estão na mesma profundidade, então o mesmo caminho relativo vale nos dois.
+
+`backend/src/helper/motor/referencias/ler.ts`:
 
 ```ts
-import tabela from "./oms-imc-idade.json" with { type: "json" };
+import { readFileSync } from "node:fs";
+
+/** Lê um JSON de backend/referencias/ (mesma profundidade em src/ e em dist/). */
+export function lerReferencia<T>(arquivo: string): T {
+  return JSON.parse(readFileSync(new URL(`../../../../referencias/${arquivo}`, import.meta.url), "utf8")) as T;
+}
+```
+
+`backend/src/helper/motor/referencias/oms.ts`:
+
+```ts
+import { lerReferencia } from "./ler.js";
 
 export type Sexo = "masculino" | "feminino";
 type Lms = { L: number; M: number; S: number };
 
-const linhas = tabela as unknown as Record<Sexo, Array<[number, number, number]>>;
+const linhas = lerReferencia<Record<Sexo, Array<[number, number, number]>>>("oms-imc-idade.json");
 
 /** LMS da OMS para o dia de vida; null fora da tabela (0–1856 dias). */
 export function lmsImcParaIdade(sexo: Sexo, dias: number): Lms | null {
@@ -1303,18 +1320,16 @@ export function percentilDeZ(z: number): number {
 }
 ```
 
-Confira se o `tsconfig.json` do backend aceita import de JSON (`resolveJsonModule: true`) e o atributo `with { type: "json" }` (Node 22 + TS ≥ 5.3). Se não aceitar, ative `resolveJsonModule` no `tsconfig.json`; se o atributo der erro de compilação, leia o JSON com `readFileSync(new URL("./oms-imc-idade.json", import.meta.url))` + `JSON.parse` — e confira que o `Dockerfile` copia o JSON para a imagem (o `npm run build` com `tsc` não copia `.json` sozinho sem `resolveJsonModule`; se for o caso, acrescente uma linha `COPY` no estágio de build ou um passo de cópia no script de build). Rode `npm run build` e confira que `dist/helper/motor/referencias/` contém os dois JSON.
-
 `backend/src/helper/motor/referencias/atalah.ts`:
 
 ```ts
-import tabela from "./atalah.json" with { type: "json" };
+import { lerReferencia } from "./ler.js";
 
 export type FaixaAtalah = "Baixo peso" | "Adequado" | "Sobrepeso" | "Obesidade";
 export const FAIXAS_ATALAH: readonly FaixaAtalah[] = ["Baixo peso", "Adequado", "Sobrepeso", "Obesidade"];
 
 type LinhaAtalah = { semana: number; baixoPesoAte: number; sobrepesoDe: number; obesidadeDe: number };
-const porSemana = new Map((tabela as LinhaAtalah[]).map((l) => [l.semana, l]));
+const porSemana = new Map(lerReferencia<LinhaAtalah[]>("atalah.json").map((l) => [l.semana, l]));
 
 /**
  * Quadro 19 (SISVAN 2011, Atalah 1997). A tabela tem uma casa decimal, então o
@@ -1333,7 +1348,7 @@ export function classificarAtalah(imc: number, semana: number): FaixaAtalah | nu
 }
 ```
 
-`backend/src/helper/motor/referencias/README.md`:
+`backend/referencias/README.md`:
 
 ```markdown
 # Tabelas de referência do motor de indicadores
@@ -1359,15 +1374,19 @@ Dados oficiais, não digitados à mão. Se for preciso atualizar, regenere — n
 
 Preencha a data do download no README.
 
+No `backend/Dockerfile`, a imagem final precisa dos dados: no estágio `build`, depois de `COPY src ./src`, acrescente `COPY referencias ./referencias`; no estágio `runtime`, depois de `COPY --from=build /app/dist ./dist`, acrescente `COPY --from=build /app/referencias ./referencias`.
+
 - [ ] **Step 7: Run**
 
-Run: `cd backend && npx tsc --noEmit -p . && npx vitest run tests/referencias.test.ts && npm run build`
-Expected: PASS; `dist/helper/motor/referencias/` tem os dois JSON.
+Run: `cd backend && npx tsc --noEmit -p . && npx vitest run tests/referencias.test.ts && npm run build && node -e "import('./dist/helper/motor/referencias/oms.js').then(m => console.log(m.lmsImcParaIdade('masculino', 0)))" && node -e "import('./dist/helper/motor/referencias/atalah.js').then(m => console.log(m.classificarAtalah(22, 20)))"`
+Expected: PASS; os dois `node -e` imprimem `{ L: -0.3053, M: 13.4069, S: 0.0956 }` e `Adequado` — prova de que o código compilado acha os dados.
+
+Confira também na imagem: `docker compose -f docker-compose.prod.yml --env-file .env.prod build api` (na raiz do repositório) termina sem erro. Se o Docker não estiver disponível, registre no relatório que essa conferência ficou para a CI.
 
 - [ ] **Step 8: Commit**
 
 ```bash
-git add backend/scripts/gerar-referencia-oms.ts backend/src/helper/motor/referencias backend/tests/referencias.test.ts
+git add backend/scripts/gerar-referencia-oms.ts backend/referencias backend/src/helper/motor/referencias backend/Dockerfile backend/tests/referencias.test.ts
 git commit -m "feat: tabelas de referencia OMS (IMC-para-idade) e Atalah, das fontes oficiais"
 ```
 (inclua `backend/tsconfig.json`/`backend/Dockerfile` se precisou mexer.)
@@ -1765,6 +1784,7 @@ beforeAll(async () => {
       titulo: `Cartão CRIA — Gestante (teste ${Date.now()})`,
       status: "PUBLICADA",
       responsavelId: usuario.id,
+      createdById: usuario.id,
       perguntas: {
         create: [
           { enunciado: "Qual a altura da gestante em metros (atual)?", tipo: "NUMERO", ordem: 0 },
@@ -1976,7 +1996,9 @@ Confira as contas do comentário antes de rodar (a de 2025-04-01 → 2026-01-01 
 
 - [ ] **Step 2: Integração** — em `backend/tests/indicadoresIntegracao.test.ts`, acrescente um caso no padrão do arquivo (cria pesquisa, perguntas e respostas reais, aprova, chama `GET /api/indicadores/calculo`, limpa no `afterAll`): uma `ESCALA` sobre uma pergunta de escolha única com três respostas aprovadas em dois municípios, e confira o valor sem filtro e com `?municipio=<um deles>`. Leia o arquivo inteiro antes e reaproveite os helpers dele.
 
-- [ ] **Step 3: README** — na seção "Deploy" do `README.md`, depois do bloco do seed, acrescente:
+- [ ] **Step 3: Dockerfile** — o serviço `seed` usa o estágio `build`, que hoje não tem a pasta `scripts/`. No `backend/Dockerfile`, estágio `build`, depois de `COPY data ./data`, acrescente `COPY scripts ./scripts`. Confira que o `.dockerignore` só exclui `scripts/*.mjs` (o `.ts` precisa entrar).
+
+- [ ] **Step 4: README** — na seção "Deploy" do `README.md`, depois do bloco do seed, acrescente:
 
 ```markdown
 Uma vez, depois do deploy que trouxe os indicadores novos: inclua a pergunta
@@ -1988,15 +2010,15 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod restart api
 ```
 ```
 
-- [ ] **Step 4: Run tudo**
+- [ ] **Step 5: Run tudo**
 
 Run: `cd backend && npx tsc --noEmit -p . && npx vitest run && npm run build`
 Expected: PASS na suíte inteira e build ok.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add backend/tests README.md
+git add backend/tests backend/Dockerfile README.md
 git commit -m "test: teste dourado e integracao dos tipos novos de indicador"
 ```
 
