@@ -5,7 +5,7 @@ import { BarChart3 } from "lucide-react";
 import type { AxiosError } from "axios";
 import { useIndicadoresAtivos, useCalculoPainel, useRegionais, type FiltrosPainel, type Indicador } from "../api/indicadores.js";
 import { usePesquisas } from "../api/pesquisas.js";
-import { MUNICIPIOS } from "../data/cria.js";
+import { MUNICIPIOS_AL } from "../data/pesquisaCrianca.js";
 import { useAuth } from "../auth/useAuth.js";
 import { podeGerenciarPesquisas } from "../auth/permissoes.js";
 import { CartaoIndicador } from "../../Components/indicadores/CartaoIndicador.js";
@@ -92,7 +92,7 @@ export function PainelIndicadores() {
   const muda = (campo: keyof typeof FILTROS_VAZIOS) => (valor: string) => setFiltros((f) => ({ ...f, [campo]: valor }));
 
   const ativos = useIndicadoresAtivos();
-  const calculo = useCalculoPainel(filtros as FiltrosPainel);
+  const calculo = useCalculoPainel(paramsPreenchidos(filtros));
   const { data: pesquisas } = usePesquisas();
   const { data: regionais } = useRegionais();
 
@@ -183,9 +183,9 @@ export function PainelIndicadores() {
           <Label htmlFor="pn-municipio">Município</Label>
           <Select id="pn-municipio" value={filtros.municipio} onChange={(e) => muda("municipio")(e.target.value)}>
             <option value="">Todos</option>
-            {MUNICIPIOS.map((m) => (
-              <option key={m.municipio} value={m.municipio}>
-                {m.municipio}
+            {MUNICIPIOS_AL.map((m) => (
+              <option key={m} value={m}>
+                {m}
               </option>
             ))}
           </Select>
@@ -234,7 +234,9 @@ export function PainelIndicadores() {
 
       {calculo.isError && <Banner $tone="warn" role="alert" style={{ marginBottom: 16 }}>{mensagemDeErro(calculo.error)}</Banner>}
 
-      {secoes.length === 0 ? (
+      {calculo.isLoading ? (
+        <Muted>Calculando…</Muted>
+      ) : secoes.length === 0 ? (
         <Muted>Nenhum indicador nesta aba.</Muted>
       ) : (
         secoes.map((s) => (
@@ -250,4 +252,10 @@ export function PainelIndicadores() {
       )}
     </>
   );
+}
+
+function paramsPreenchidos(f: typeof FILTROS_VAZIOS): FiltrosPainel {
+  const p: FiltrosPainel = {};
+  for (const [k, v] of Object.entries(f)) if (v) p[k as keyof FiltrosPainel] = v;
+  return p;
 }

@@ -106,4 +106,18 @@ describe("PainelIndicadores", () => {
     renderTela();
     expect(await screen.findByText(/Nenhum indicador ativo ainda/)).toBeInTheDocument();
   });
+
+  it("filtro de município lista os 102 municípios de Alagoas", async () => {
+    renderTela();
+    await screen.findByText("Cobertura vacinal");
+    const opcoes = screen.getByLabelText("Município").querySelectorAll("option");
+    expect(opcoes.length).toBe(103);
+  });
+
+  it("enquanto o cálculo carrega, nenhum cartão mostra 'Não calculável'", async () => {
+    calculo = () => new Promise(() => {});
+    renderTela();
+    expect(await screen.findByText("Calculando…")).toBeInTheDocument();
+    expect(screen.queryByText(/Não calculável/)).not.toBeInTheDocument();
+  });
 });

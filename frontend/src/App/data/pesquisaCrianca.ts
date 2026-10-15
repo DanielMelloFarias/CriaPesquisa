@@ -182,7 +182,7 @@ export const PESQUISA_CRIANCA: PesquisaDemo = {
   ],
 };
 
-const MUNICIPIOS_AL = [
+export const MUNICIPIOS_AL = [
   "Água Branca", "Anadia", "Arapiraca", "Atalaia", "Barra de Santo Antônio", "Barra de São Miguel",
   "Batalha", "Belém", "Belo Monte", "Boca da Mata", "Branquinha", "Cacimbinhas", "Cajueiro", "Campestre",
   "Campo Alegre", "Campo Grande", "Canapi", "Capela", "Carneiros", "Chã Preta", "Coité do Nóia",
