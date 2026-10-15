@@ -169,6 +169,25 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
 docker compose -f docker-compose.prod.yml --env-file .env.prod --profile seed run --rm seed
 ```
 
+**Uma vez, depois do deploy que trouxe os indicadores novos** (na VM da SECRIA, a partir do
+código vindo do GitHub): inclua a pergunta "Semana gestacional atual" na pesquisa Gestante
+publicada. O script é idempotente.
+
+1. Rode o script:
+
+   ```bash
+   docker compose -f docker-compose.prod.yml --env-file .env.prod --profile seed run --rm seed npx tsx scripts/adicionar-semana-gestacional.ts
+   ```
+
+2. Confira a saída: deve haver uma linha `pergunta criada: <id>` (primeira vez) ou
+   `já existia: <id>` (reexecução). **Saída vazia significa que o script não rodou**
+   (guarda de execução direta) — não siga adiante; reporte o problema.
+3. Só então reinicie a API:
+
+   ```bash
+   docker compose -f docker-compose.prod.yml --env-file .env.prod restart api
+   ```
+
 Gere os segredos com algo como `node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"`.
 `SEED_PASSWORD` precisa atender à política de senha — o seed recusa senha fraca em produção.
 
@@ -220,6 +239,7 @@ Este sistema lida com dados de beneficiários (LGPD). Cuidados adotados no repos
 - `SIGTERM` encerra com calma — as requisições em andamento terminam antes do processo sair.
 - As listagens têm teto de 200 itens por página: ninguém leva a base inteira numa requisição só.
 - O log de acesso registra método, rota, IP, status e tempo — com `Authorization` e `Cookie` redigidos.
+- O cálculo de indicadores carrega a base aprovada inteira a cada requisição: uma única resposta antiga com itens duplicados faz o endpoint de indicadores responder `409 DADO_INCONSISTENTE` para qualquer filtro (respostas novas já não podem ser salvas com duplicidade).
 - O schema evolui por migrations versionadas (`prisma/migrations/`), não por `db push`.
 
 ## Direitos e licença

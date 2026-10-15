@@ -23,6 +23,7 @@ RUN npm run build
 # Dados de referência lidos pelo seed (municípios). Ficam só nesta etapa: a
 # imagem final não roda seed.
 COPY data ./data
+COPY scripts ./scripts
 
 # ── Etapa 1b: dependências de produção ───────────────────────────────────────
 # O prune fica numa etapa própria: a etapa `build` mantém o tsx, que o serviço
