@@ -490,6 +490,14 @@ describe("indicador com pesquisaId considera só as respostas daquela pesquisa",
     });
   });
 
+  it("dependente sem pesquisaId lê branco nas respostas fora da pesquisa da dependência", () => {
+    // vcras só da criança; o composto vê todas, mas as gestantes chegam a ele em branco.
+    const vcrasPc = ind({ id: "vcras", tipo: "PROPORCAO", config: { perguntaId: "cras", opcoesNumerador: ["Sim"] }, pesquisaId: "pc" });
+    const geral = ind({ id: "geral", tipo: "COMPOSTO", config: { termos: [{ indicadorId: "vcras", peso: 1 }], divisor: 1 } });
+    // A=100, B=0 -> 50. Se as gestantes (todas Sim) vazassem, daria 80.
+    expect(calcular([vcrasPc, geral], respostas, PERGUNTAS).get("geral")).toEqual({ status: "OK", valor: 50 });
+  });
+
   it("indicador sem pesquisaId continua usando todas as respostas", () => {
     const r = calcular(
       [
@@ -501,5 +509,112 @@ describe("indicador com pesquisaId considera só as respostas daquela pesquisa",
     );
     expect(r.get("total")).toEqual({ status: "OK", valor: 5 });
     expect(r.get("vcras")).toEqual({ status: "OK", valor: 80 });
+  });
+});
+
+describe("máscara do painel", () => {
+  const indicadores = [
+    ind({ id: "vcras", tipo: "PROPORCAO", config: { perguntaId: "cras", opcoesNumerador: ["Sim"] } }),
+    ind({ id: "total", tipo: "CONTAGEM", config: {} }),
+    ind({ id: "mccM", tipo: "COMPOSTO", config: { termos: [{ indicadorId: "vcras", peso: 1 }], divisor: 1 } }),
+  ];
+  const respostas = [crianca("A", "Sim", "Sim", "Sim"), crianca("B", "Não", "Sim", "Não"), crianca("C", "Sim", "Não", "Sim")];
+  let comMascara: Map<string, unknown>;
+  let semMascara: Map<string, unknown>;
+
+  beforeAll(() => {
+    comMascara = calcular(indicadores, respostas, PERGUNTAS, [true, true, false]);
+    semMascara = calcular(indicadores, respostas.slice(0, 2), PERGUNTAS);
+  });
+
+  it("agrega só quem está na máscara", () => {
+    expect(comMascara.get("vcras")).toEqual({ status: "OK", valor: 50 });
+    expect(comMascara.get("total")).toEqual({ status: "OK", valor: 2 });
+    expect(comMascara.get("mccM")).toEqual({ status: "OK", valor: 50 });
+  });
+
+  it("dá o mesmo número que filtrar as respostas antes", () => {
+    expect(comMascara).toEqual(semMascara);
+  });
+
+  it("sem máscara: todas", () => {
+    expect(calcular(indicadores, respostas, PERGUNTAS).get("total")).toEqual({ status: "OK", valor: 3 });
+  });
+});
+
+describe("máscara do painel não muda número de tipo antigo (Review Focus 1)", () => {
+  // Todos os tipos antigos juntos, com pareamento ANTES/APÓS próprio (vcras) e herdado
+  // (mcc, faixasMcc), CLASSIFICACAO sobre COMPOSTO simples e pareado, e escopo de pesquisa.
+  const perguntas = new Set(["crasA", "crasD", "vac", "n", "cor"]);
+  const indicadores = [
+    ind({
+      id: "vcras",
+      tipo: "PROPORCAO",
+      config: { perguntaId: "crasA", opcoesNumerador: ["Sim"] },
+      recorte: "ANTES_APOS",
+      recorteConfig: { substituicoes: [{ de: "crasA", para: "crasD" }] },
+    }),
+    ind({ id: "cvac", tipo: "PROPORCAO", config: { perguntaId: "vac", opcoesNumerador: ["Sim"] } }),
+    ind({ id: "media", tipo: "MEDIA", config: { perguntaId: "n" } }),
+    ind({ id: "total", tipo: "CONTAGEM", config: {} }),
+    ind({ id: "totalPc", tipo: "CONTAGEM", config: {}, pesquisaId: "pc" }),
+    ind({ id: "dist", tipo: "DISTRIBUICAO", config: { perguntaId: "cor" } }),
+    ind({
+      id: "mcc",
+      tipo: "COMPOSTO",
+      config: { termos: [{ indicadorId: "vcras", peso: 3 }, { indicadorId: "cvac", peso: 5 }], divisor: 8 },
+    }),
+    ind({
+      id: "faixasMcc",
+      tipo: "CLASSIFICACAO",
+      config: { indicadorId: "mcc", faixas: [{ rotulo: "Baixo", de: 0, ate: 50 }, { rotulo: "Alto", de: 50, ate: 100 }] },
+    }),
+    ind({ id: "soVac", tipo: "COMPOSTO", config: { termos: [{ indicadorId: "cvac", peso: 1 }], divisor: 1 }, pesquisaId: "pc" }),
+    ind({
+      id: "faixasSoVac",
+      tipo: "CLASSIFICACAO",
+      config: { indicadorId: "soVac", faixas: [{ rotulo: "Baixo", de: 0, ate: 50 }, { rotulo: "Alto", de: 50, ate: 100 }] },
+    }),
+  ];
+  const r = (id: string, pesquisa: string, crasA: string, crasD: string, vac: string, n: number | null, cor: string) =>
+    montarResposta(
+      id,
+      [
+        { perguntaId: "crasA", opcoesSelecionadas: [crasA] },
+        { perguntaId: "crasD", opcoesSelecionadas: [crasD] },
+        { perguntaId: "vac", opcoesSelecionadas: [vac] },
+        { perguntaId: "n", valorNumero: n },
+        { perguntaId: "cor", opcoesSelecionadas: [cor] },
+      ],
+      pesquisa,
+    );
+  const respostas = [
+    r("A", "pc", "Sim", "Sim", "Sim", 10, "Azul"),
+    r("B", "pc", "Não", "Sim", "Não", 0, "Verde"),
+    r("C", "pc", "Não", "Não", "Sim", 7, "Azul"),
+    r("D", "pg", "Não", "Não", "Não", null, "Verde"),
+    r("E", "pc", "Não", "Sim", "Sim", 3, "Verde"),
+    r("F", "pg", "Sim", "Sim", "Sim", 1, "Azul"),
+  ];
+  const mascara = [true, false, true, false, true, true];
+
+  it("calcular(todas, máscara) == calcular(só as da máscara), indicador por indicador", () => {
+    const comMascara = calcular(indicadores, respostas, perguntas, mascara);
+    const filtradas = calcular(indicadores, respostas.filter((_, i) => mascara[i]), perguntas);
+    for (const { id } of indicadores) {
+      expect(comMascara.get(id), id).toEqual(filtradas.get(id));
+    }
+    expect(comMascara).toEqual(filtradas);
+  });
+
+  it("a máscara de fato muda o número (o teste acima não é vácuo)", () => {
+    const comMascara = calcular(indicadores, respostas, perguntas, mascara);
+    const todas = calcular(indicadores, respostas, perguntas);
+    for (const id of ["vcras", "mcc", "faixasMcc", "faixasSoVac", "media", "total", "dist"]) {
+      expect(comMascara.get(id), id).not.toEqual(todas.get(id));
+    }
+    // E os pareados continuam pareados.
+    expect(comMascara.get("vcras")).toHaveProperty("apos");
+    expect(comMascara.get("faixasMcc")).toHaveProperty("apos");
   });
 });

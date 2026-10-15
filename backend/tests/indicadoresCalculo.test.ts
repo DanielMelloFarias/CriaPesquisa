@@ -31,6 +31,7 @@ beforeEach(() => {
   vi.mocked(indicadorModel.idsAtivos).mockImplementation(async (ids: string[]) => ids);
   vi.mocked(indicadorModel.pesquisaExiste).mockResolvedValue(true);
   vi.mocked(indicadorCalculoModel.perguntasExistentes).mockResolvedValue(new Set(["cras"]));
+  vi.mocked(indicadorCalculoModel.perguntasDeSexo).mockResolvedValue(new Set());
   vi.mocked(indicadorCalculoModel.carregarRespostas).mockResolvedValue([
     montarResposta("A", [{ perguntaId: "cras", opcoesSelecionadas: ["Sim"] }]),
     montarResposta("B", [{ perguntaId: "cras", opcoesSelecionadas: ["Não"] }]),
@@ -43,6 +44,29 @@ describe("GET /api/indicadores/calculo", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.resultados.VCRAS).toEqual({ status: "OK", valor: 50 });
+  });
+
+  it("filtro de município agrega só as respostas do município", async () => {
+    vi.mocked(indicadorCalculoModel.carregarRespostas).mockResolvedValue([
+      montarResposta("r1", [{ perguntaId: "cras", opcoesSelecionadas: ["Sim"] }], "ps1", { municipio: "Maceió" }),
+      montarResposta("r2", [{ perguntaId: "cras", opcoesSelecionadas: ["Não"] }], "ps1", { municipio: "Arapiraca" }),
+    ]);
+    const res = await request(app).get("/api/indicadores/calculo?municipio=Maceió").set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.resultados.VCRAS).toEqual({ status: "OK", valor: 100 });
+    // O filtro não vai para o banco: a base inteira é carregada e a máscara decide.
+    expect(indicadorCalculoModel.carregarRespostas).toHaveBeenCalledWith();
+  });
+
+  it("filtro de sexo usa as perguntas de sexo carregadas do banco", async () => {
+    vi.mocked(indicadorCalculoModel.perguntasDeSexo).mockResolvedValue(new Set(["sexo"]));
+    vi.mocked(indicadorCalculoModel.carregarRespostas).mockResolvedValue([
+      montarResposta("r1", [{ perguntaId: "cras", opcoesSelecionadas: ["Não"] }, { perguntaId: "sexo", opcoesSelecionadas: ["Feminino"] }]),
+      montarResposta("r2", [{ perguntaId: "cras", opcoesSelecionadas: ["Sim"] }, { perguntaId: "sexo", opcoesSelecionadas: ["Masculino"] }]),
+    ]);
+    const res = await request(app).get("/api/indicadores/calculo?sexo=Feminino").set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.resultados.VCRAS).toEqual({ status: "OK", valor: 0 });
   });
 
   it("a rota não é lida como /indicadores/:id", async () => {

@@ -1,43 +1,39 @@
 import { prisma } from "../config/prisma.js";
-import type { Prisma } from "@prisma/client";
 import { montarResposta, type RespostaAvaliavel } from "../helper/motor/avaliadores.js";
-import type { FiltrosIndicador } from "../helper/filtrosIndicador.js";
 
 export const indicadorCalculoModel = {
-  /** Só respostas aprovadas, não excluídas e de pesquisa não excluída entram em indicador. */
-  async carregarRespostas(filtros: FiltrosIndicador): Promise<RespostaAvaliavel[]> {
-    const where: Prisma.RespostaWhereInput = { deletedAt: null, status: "APROVADA", pesquisa: { deletedAt: null } };
-    if (filtros.pesquisaId) where.pesquisaId = filtros.pesquisaId;
-    if (filtros.municipio) where.municipio = filtros.municipio;
-    if (filtros.regional) where.regional = filtros.regional;
-    if (filtros.de || filtros.ate) {
-      where.enviadaEm = {
-        ...(filtros.de ? { gte: filtros.de } : {}),
-        ...(filtros.ate ? { lte: filtros.ate } : {}),
-      };
-    }
-    // Sexo não é campo da resposta: é resposta a uma pergunta.
-    if (filtros.sexo) {
-      where.itens = {
-        some: {
-          pergunta: { enunciado: { contains: "Sexo biológico", mode: "insensitive" } },
-          opcoesSelecionadas: { has: filtros.sexo },
-        },
-      };
-    }
-
+  /**
+   * Todas as respostas aprovadas, não excluídas e de pesquisa não excluída.
+   * Os filtros do painel não vão para o banco: o ZSCORE precisa da pesquisa
+   * inteira como referência, e a máscara (recortePainel.ts) decide quem agrega.
+   */
+  async carregarRespostas(): Promise<RespostaAvaliavel[]> {
     const respostas = await prisma.resposta.findMany({
-      where,
+      where: { deletedAt: null, status: "APROVADA", pesquisa: { deletedAt: null } },
       select: {
         id: true,
         pesquisaId: true,
+        enviadaEm: true,
+        municipio: true,
+        regional: true,
         itens: {
-          select: { perguntaId: true, valorTexto: true, valorNumero: true, opcoesSelecionadas: true },
+          select: { perguntaId: true, valorTexto: true, valorNumero: true, valorData: true, opcoesSelecionadas: true },
         },
       },
     });
 
-    return respostas.map((r) => montarResposta(r.id, r.itens, r.pesquisaId));
+    return respostas.map((r) =>
+      montarResposta(r.id, r.itens, r.pesquisaId, { enviadaEm: r.enviadaEm, municipio: r.municipio, regional: r.regional }),
+    );
+  },
+
+  /** Sexo é resposta a pergunta: mesma regra do filtro antigo (enunciado contém "Sexo biológico"). */
+  async perguntasDeSexo(): Promise<Set<string>> {
+    const perguntas = await prisma.pergunta.findMany({
+      where: { enunciado: { contains: "Sexo biológico", mode: "insensitive" } },
+      select: { id: true },
+    });
+    return new Set(perguntas.map((p) => p.id));
   },
 
   async perguntasExistentes(): Promise<Set<string>> {

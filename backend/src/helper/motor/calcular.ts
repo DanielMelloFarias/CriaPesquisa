@@ -67,7 +67,8 @@ function aplicarSubstituicoes(config: ConfigIndicador, substituicoes: Substituic
 type LerValores = (indicadorId: string) => ValorIndividual[] | undefined;
 
 /**
- * `noEscopo[i]` diz se a resposta i é da pesquisa do indicador. Os vetores
+ * `noEscopo[i]` diz se a resposta i é da pesquisa do indicador e está na
+ * máscara do painel. Os vetores
  * nunca são filtrados — só anulados —, para que valores[i] continue sendo
  * a resposta i em quem depende deste indicador.
  */
@@ -103,6 +104,7 @@ export function calcular(
   indicadores: IndicadorParaCalculo[],
   respostas: RespostaAvaliavel[],
   perguntasExistentes: Set<string>,
+  mascara: boolean[] = respostas.map(() => true),
 ): Map<string, ResultadoComRecorte> {
   const porId = new Map(indicadores.map((i) => [i.id, i]));
 
@@ -219,12 +221,15 @@ export function calcular(
       }
     }
 
-    // Fora da pesquisa do indicador vale como branco: sai do numerador e do denominador.
-    const noEscopo = respostas.map((r) => indicador.pesquisaId == null || r.pesquisaId === indicador.pesquisaId);
+    // Fora da pesquisa do indicador vale como branco. A avaliação usa `daPesquisa`
+    // (a referência do ZSCORE é a pesquisa inteira); a agregação usa `noEscopo`,
+    // que também respeita a máscara do painel.
+    const daPesquisa = respostas.map((r) => indicador.pesquisaId == null || r.pesquisaId === indicador.pesquisaId);
+    const noEscopo = daPesquisa.map((dentro, i) => dentro && mascara[i] === true);
 
     const calcularCenario = (cfg: ConfigIndicador, lerValores: LerValores) => {
       const valores = respostas.map((resposta, indice) => {
-        if (!noEscopo[indice]) return null;
+        if (!daPesquisa[indice]) return null;
         const deps = new Map<string, ValorIndividual>();
         for (const depId of dependencias) {
           // Posição, não busca: o valor do MCC da criança i está em valores[i].
@@ -232,7 +237,9 @@ export function calcular(
         }
         return avaliar(cfg, resposta, deps);
       });
-      return { valores, resultado: agregarPorTipo(cfg, valores, respostas, noEscopo, indicador.casasDecimais, lerValores) };
+      // `valores` (sem máscara) é o que os dependentes leem; só a agregação é mascarada.
+      const naAgregacao = valores.map((v, i) => (noEscopo[i] ? v : null));
+      return { valores, resultado: agregarPorTipo(cfg, naAgregacao, respostas, noEscopo, indicador.casasDecimais, lerValores) };
     };
 
     const antes = calcularCenario(config, (dep) => valoresAntes.get(dep));

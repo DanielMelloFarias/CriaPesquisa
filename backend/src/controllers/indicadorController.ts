@@ -13,6 +13,7 @@ import { extrairFiltrosIndicador, chaveDeCache } from "../helper/filtrosIndicado
 import { lerCache, gravarCache, invalidarCache, geracaoAtual } from "../helper/cacheIndicadores.js";
 import { calcular, type IndicadorParaCalculo } from "../helper/motor/calcular.js";
 import { ItemDuplicado } from "../helper/motor/avaliadores.js";
+import { mascaraDoRecorte } from "../helper/recortePainel.js";
 
 /** Valida a config contra o tipo e devolve de quais indicadores este depende. */
 function conferirConfig(tipo: CriarIndicadorInput["tipo"], config: unknown): string[] {
@@ -171,10 +172,11 @@ export async function calculo(req: Request, res: Response) {
   if (emCache) return res.json({ resultados: emCache, cache: true });
 
   const geracao = geracaoAtual(); // antes de ler o banco: ver gravarCache
-  const [indicadores, respostas, perguntas] = await Promise.all([
+  const [indicadores, respostas, perguntas, perguntasSexo] = await Promise.all([
     indicadorModel.listarAtivos(),
-    indicadorCalculoModel.carregarRespostas(filtros),
+    indicadorCalculoModel.carregarRespostas(),
     indicadorCalculoModel.perguntasExistentes(),
+    indicadorCalculoModel.perguntasDeSexo(),
   ]).catch((erro: unknown) => {
     // Resposta gravada com dois itens para a mesma pergunta: dado corrompido, não falha do servidor.
     if (erro instanceof ItemDuplicado) {
@@ -186,7 +188,7 @@ export async function calculo(req: Request, res: Response) {
 
   let calculados;
   try {
-    calculados = calcular(paraCalculo, respostas, perguntas);
+    calculados = calcular(paraCalculo, respostas, perguntas, mascaraDoRecorte(respostas, filtros, perguntasSexo));
   } catch (erro) {
     // Ciclo já gravado (corrida entre dois salvamentos): dado corrompido, não falha do servidor.
     if (erro instanceof CicloDetectado) {

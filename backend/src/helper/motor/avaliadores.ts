@@ -17,13 +17,21 @@ export function montarResposta(
   id: string,
   itens: Array<ItemAvaliavel & { perguntaId: string }>,
   pesquisaId: string | null = null,
+  extras: { enviadaEm?: Date | null; municipio?: string | null; regional?: string | null } = {},
 ): RespostaAvaliavel {
   const mapa = new Map<string, ItemAvaliavel>();
   for (const { perguntaId, ...item } of itens) {
     if (mapa.has(perguntaId)) throw new ItemDuplicado(id, perguntaId);
     mapa.set(perguntaId, item);
   }
-  return { id, pesquisaId, itens: mapa };
+  return {
+    id,
+    pesquisaId,
+    enviadaEm: extras.enviadaEm ?? null,
+    municipio: extras.municipio ?? null,
+    regional: extras.regional ?? null,
+    itens: mapa,
+  };
 }
 
 /** Zero é resposta; branco é ausência. Confundir os dois muda o denominador. */
