@@ -33,10 +33,16 @@ beforeEach(() => {
     "usuario",
     JSON.stringify({ id: "1", nome: "Ana", email: "ana@exemplo.local", papel: "GESTOR", precisaTrocarSenha: false }),
   );
-  getSpy.mockImplementation((async (url: string) => {
+  getSpy.mockImplementation((async (url: string, cfg?: { params?: { page?: number } }) => {
     if (url === "/pesquisas") return { data: { itens: [{ id: "p1", titulo: "Criança", status: "PUBLICADA" }] } };
     return {
-      data: { total: 2, page: 1, pageSize: 50, itens: ITENS, contadores: { DEFINICAO_INCOMPLETA: 5, ATIVO: 2, INATIVO: 1 } },
+      data: {
+        total: 120,
+        page: cfg?.params?.page ?? 1,
+        pageSize: 50,
+        itens: ITENS,
+        contadores: { DEFINICAO_INCOMPLETA: 5, ATIVO: 2, INATIVO: 1 },
+      },
     };
   }) as never);
 });
@@ -72,6 +78,45 @@ describe("Indicadores", () => {
 
     const params = (chamadasIndicadores()[0][1] as { params: Record<string, unknown> }).params;
     expect(params.status).toBe("DEFINICAO_INCOMPLETA");
+  });
+
+  it("pagina: mostra o intervalo, pede a página 2 e volta à 1 ao trocar filtro", async () => {
+    renderTela();
+    // itens do mock: 2 por página, total 120
+    expect(await screen.findByText(/Mostrando 1–2 de 120/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Anterior" })).toBeDisabled();
+    const primeira = chamadasIndicadores()[0][1] as { params: Record<string, unknown> };
+    expect(primeira.params.page).toBe(1);
+    expect(primeira.params.pageSize).toBe(50);
+
+    await userEvent.click(screen.getByRole("button", { name: "Próxima" }));
+    await vi.waitFor(() => {
+      const ultima = chamadasIndicadores().at(-1)![1] as { params: Record<string, unknown> };
+      expect(ultima.params.page).toBe(2);
+    });
+    expect(await screen.findByText(/Mostrando 51–52 de 120/)).toBeInTheDocument();
+
+    await userEvent.selectOptions(screen.getByLabelText(/apresentação/i), "Perfil");
+    await vi.waitFor(() => {
+      const ultima = chamadasIndicadores().at(-1)![1] as { params: Record<string, unknown> };
+      expect(ultima.params.apresentacao).toBe("Perfil");
+      expect(ultima.params.page).toBe(1);
+    });
+  });
+
+  it("só consulta a busca depois de parar de digitar", async () => {
+    renderTela();
+    await screen.findByText("Cobertura vacinal");
+    const antes = chamadasIndicadores().length;
+
+    await userEvent.type(screen.getByLabelText(/buscar por nome/i), "vac");
+    expect(chamadasIndicadores().length).toBe(antes);
+
+    await vi.waitFor(() => {
+      const ultima = chamadasIndicadores().at(-1)![1] as { params: Record<string, unknown> };
+      expect(ultima.params.q).toBe("vac");
+    });
+    expect(chamadasIndicadores().length).toBe(antes + 1);
   });
 
   it("refaz a chamada ao filtrar por apresentação Perfil", async () => {

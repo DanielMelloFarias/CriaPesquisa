@@ -32,15 +32,27 @@ export interface FiltrosIndicadores {
 export interface ListaIndicadores {
   itens: Indicador[];
   total: number;
+  page: number;
+  pageSize: number;
   contadores: Record<StatusIndicador, number>;
 }
 
-export function useIndicadores(filtros: FiltrosIndicadores) {
+export const TAMANHO_PAGINA = 50;
+
+export function useIndicadores(filtros: FiltrosIndicadores, pagina = 1) {
   return useQuery<ListaIndicadores>({
-    queryKey: ["indicadores", filtros],
+    queryKey: ["indicadores", filtros, pagina],
     queryFn: async () => {
-      const { data } = await api.get<ListaIndicadores>("/indicadores", { params: filtros });
-      return { itens: data.itens, total: data.total, contadores: data.contadores };
+      const { data } = await api.get<ListaIndicadores>("/indicadores", {
+        params: { ...filtros, page: pagina, pageSize: TAMANHO_PAGINA },
+      });
+      return {
+        itens: data.itens,
+        total: data.total,
+        page: data.page,
+        pageSize: data.pageSize,
+        contadores: data.contadores,
+      };
     },
   });
 }

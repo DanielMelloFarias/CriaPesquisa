@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import styled from "styled-components";
 import { Gauge } from "lucide-react";
@@ -23,6 +23,7 @@ import {
   Label,
   Select,
   TextInput,
+  Button,
 } from "../../Styles/ui.js";
 
 type FiltroStatus = StatusIndicador | "TODOS";
@@ -54,6 +55,14 @@ const LinhaClicavel = styled.tr`
   }
 `;
 
+const Paginacao = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding-top: 12px;
+`;
+
 const Chips = styled.div`
   display: flex;
   gap: 4px;
@@ -70,15 +79,25 @@ export function Indicadores() {
   const [pesquisaId, setPesquisaId] = useState("");
   const [apresentacao, setApresentacao] = useState<"" | "Escopo" | "Perfil">("");
   const [busca, setBusca] = useState("");
+  const [buscaAplicada, setBuscaAplicada] = useState("");
+  const [pagina, setPagina] = useState(1);
+
+  // Espera a pessoa parar de digitar antes de consultar a API.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setBuscaAplicada(busca);
+      setPagina(1);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [busca]);
 
   const filtros: FiltrosIndicadores = {};
   if (status !== "TODOS") filtros.status = status;
   if (pesquisaId) filtros.pesquisaId = pesquisaId;
   if (apresentacao) filtros.apresentacao = apresentacao;
-  
-  if (busca.trim()) filtros.q = busca.trim();
+  if (buscaAplicada.trim()) filtros.q = buscaAplicada.trim();
 
-  const { data, isLoading, isError } = useIndicadores(filtros);
+  const { data, isLoading, isError } = useIndicadores(filtros, pagina);
   const { data: pesquisas } = usePesquisas();
 
   const cabecalho = (
@@ -98,7 +117,11 @@ export function Indicadores() {
     <Filtros>
       <Field>
         <Label htmlFor="ind-status">Status</Label>
-        <Select id="ind-status" value={status} onChange={(e) => setStatus(e.target.value as FiltroStatus)}>
+        <Select id="ind-status" value={status} onChange={(e) => {
+            setStatus(e.target.value as FiltroStatus);
+            setPagina(1);
+          }}
+        >
           <option value="DEFINICAO_INCOMPLETA">Para revisar</option>
           <option value="ATIVO">Ativos</option>
           <option value="INATIVO">Inativos</option>
@@ -107,7 +130,11 @@ export function Indicadores() {
       </Field>
       <Field>
         <Label htmlFor="ind-pesquisa">Pesquisa</Label>
-        <Select id="ind-pesquisa" value={pesquisaId} onChange={(e) => setPesquisaId(e.target.value)}>
+        <Select id="ind-pesquisa" value={pesquisaId} onChange={(e) => {
+            setPesquisaId(e.target.value);
+            setPagina(1);
+          }}
+        >
           <option value="">Todas</option>
           {pesquisas?.itens.map((p) => (
             <option key={p.id} value={p.id}>
@@ -121,7 +148,10 @@ export function Indicadores() {
         <Select
           id="ind-apresentacao"
           value={apresentacao}
-          onChange={(e) => setApresentacao(e.target.value as "" | "Escopo" | "Perfil")}
+          onChange={(e) => {
+            setApresentacao(e.target.value as "" | "Escopo" | "Perfil");
+            setPagina(1);
+          }}
         >
           <option value="">Todas</option>
           <option value="Escopo">Escopo</option>
@@ -198,6 +228,23 @@ export function Indicadores() {
               </tbody>
             </Tabela>
           </TableWrap>
+          <Paginacao>
+            <Muted as="span">
+              Mostrando {(data.page - 1) * data.pageSize + 1}–{(data.page - 1) * data.pageSize + data.itens.length} de{" "}
+              {data.total}
+            </Muted>
+            <Button type="button" $variant="ghost" disabled={pagina <= 1} onClick={() => setPagina((p) => p - 1)}>
+              Anterior
+            </Button>
+            <Button
+              type="button"
+              $variant="ghost"
+              disabled={pagina * data.pageSize >= data.total}
+              onClick={() => setPagina((p) => p + 1)}
+            >
+              Próxima
+            </Button>
+          </Paginacao>
         </Card>
       )}
     </div>
