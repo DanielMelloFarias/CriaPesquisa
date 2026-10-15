@@ -212,10 +212,10 @@ publicada. O script é idempotente.
 
 4. Confira a saída: a primeira linha deve ser "110 lidas · …". Saída vazia = o script não rodou.
    Rodar de novo é seguro: indicadores já importados (e já revisados) não são tocados.
-4. Reinicie a API: `docker compose -f docker-compose.prod.yml --env-file .env.prod restart api`.
-5. Os indicadores aparecem em **Indicadores** (menu Administração) como "Para revisar".
+5. Reinicie a API: `docker compose -f docker-compose.prod.yml --env-file .env.prod restart api`.
+6. Os indicadores aparecem em **Indicadores** (menu Administração) como "Para revisar".
    Nenhum número aparece no sistema até alguém ativar o indicador.
-6. Apague o arquivo da VM: `rm /tmp/indicadores.xlsx`.
+7. Apague o arquivo da VM: `rm /tmp/indicadores.xlsx`.
 
 Gere os segredos com algo como `node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"`.
 `SEED_PASSWORD` precisa atender à política de senha — o seed recusa senha fraca em produção.
