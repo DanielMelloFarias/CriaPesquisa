@@ -16,7 +16,8 @@
     "prisma:generate": "prisma generate",
     "seed": "tsx prisma/seed.ts",
     "backup": "tsx scripts/backup.ts",
-    "restaurar": "tsx scripts/restaurar.ts"
+    "restaurar": "tsx scripts/restaurar.ts",
+    "importar-indicadores": "tsx scripts/importar-indicadores.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
