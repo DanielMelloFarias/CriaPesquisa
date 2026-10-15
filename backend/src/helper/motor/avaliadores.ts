@@ -1,5 +1,5 @@
 import type { ConfigIndicador, NoExpressao } from "../indicadorConfig.js";
-import { mesesCompletos } from "./idade.js";
+import { mesesCompletos, dataLocalAlagoas } from "./idade.js";
 import type { ItemAvaliavel, RespostaAvaliavel, ValorIndividual } from "./tipos.js";
 
 export type { ItemAvaliavel, RespostaAvaliavel, ValorIndividual };
@@ -146,7 +146,7 @@ export function avaliar(
       const consultas = resposta.itens.get(config.perguntaId);
       const nascimento = resposta.itens.get(config.nascimentoPerguntaId)?.valorData;
       if (!temNumero(consultas) || !nascimento || !resposta.enviadaEm) return null;
-      const meses = mesesCompletos(nascimento, resposta.enviadaEm);
+      const meses = mesesCompletos(nascimento, dataLocalAlagoas(resposta.enviadaEm));
       if (meses < 0) return null;
       const faixa = config.faixas.find((f) => meses >= f.deMeses && (f.ateMeses === null || meses < f.ateMeses));
       if (!faixa) return null;

@@ -180,6 +180,11 @@ describe("META_POR_IDADE", () => {
     expect(avaliar(cfg, r("2024-07-01", 2), new Map())).toBe(100); // 18 meses: 2 de 2
     expect(avaliar(cfg, r("2023-07-01", 3), new Map())).toBe(100); // 30 meses: teto
   });
+  it("entrevista após 21h em Alagoas conta o dia local, não o dia UTC", () => {
+    // 2026-01-01T01:00Z = 22h de 31/12/2025 em Alagoas: 11 meses, faixa 0-12 (esperado 7).
+    expect(avaliar(cfg, r("2025-01-01", 7, new Date("2026-01-01T01:00:00Z")), new Map())).toBe(100);
+    expect(avaliar(cfg, r("2025-01-01", 1, new Date("2026-01-01T01:00:00Z")), new Map())).toBeCloseTo(100 / 7, 10);
+  });
   it("zero consultas é zero, não branco", () => {
     expect(avaliar(cfg, r("2023-07-01", 0), new Map())).toBe(0);
   });
