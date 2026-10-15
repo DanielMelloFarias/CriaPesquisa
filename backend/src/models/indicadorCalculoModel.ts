@@ -27,13 +27,24 @@ export const indicadorCalculoModel = {
     );
   },
 
-  /** Sexo é resposta a pergunta: mesma regra do filtro antigo (enunciado contém "Sexo biológico"). */
-  async perguntasDeSexo(): Promise<Set<string>> {
+  /**
+   * Sexo é resposta a pergunta (enunciado contém "Sexo biológico"). Devolve, por
+   * pesquisa, a pergunta a usar no filtro: "Sexo biológico da criança" quando a
+   * pesquisa tem (o recorte é sobre a criança, não sobre quem responde); senão a
+   * pergunta genérica "Sexo biológico".
+   */
+  async perguntasDeSexo(): Promise<Map<string, string>> {
     const perguntas = await prisma.pergunta.findMany({
       where: { enunciado: { contains: "Sexo biológico", mode: "insensitive" } },
-      select: { id: true },
+      select: { id: true, pesquisaId: true, enunciado: true },
+      orderBy: { ordem: "asc" },
     });
-    return new Set(perguntas.map((p) => p.id));
+    const daCrianca = (enunciado: string) =>
+      enunciado.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().includes("sexo biologico da crianca");
+    const porPesquisa = new Map<string, string>();
+    for (const p of perguntas) if (daCrianca(p.enunciado) && !porPesquisa.has(p.pesquisaId)) porPesquisa.set(p.pesquisaId, p.id);
+    for (const p of perguntas) if (!porPesquisa.has(p.pesquisaId)) porPesquisa.set(p.pesquisaId, p.id);
+    return porPesquisa;
   },
 
   async perguntasExistentes(): Promise<Set<string>> {

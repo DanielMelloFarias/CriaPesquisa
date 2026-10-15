@@ -31,7 +31,7 @@ beforeEach(() => {
   vi.mocked(indicadorModel.idsAtivos).mockImplementation(async (ids: string[]) => ids);
   vi.mocked(indicadorModel.pesquisaExiste).mockResolvedValue(true);
   vi.mocked(indicadorCalculoModel.perguntasExistentes).mockResolvedValue(new Set(["cras"]));
-  vi.mocked(indicadorCalculoModel.perguntasDeSexo).mockResolvedValue(new Set());
+  vi.mocked(indicadorCalculoModel.perguntasDeSexo).mockResolvedValue(new Map());
   vi.mocked(indicadorCalculoModel.carregarRespostas).mockResolvedValue([
     montarResposta("A", [{ perguntaId: "cras", opcoesSelecionadas: ["Sim"] }]),
     montarResposta("B", [{ perguntaId: "cras", opcoesSelecionadas: ["Não"] }]),
@@ -59,10 +59,10 @@ describe("GET /api/indicadores/calculo", () => {
   });
 
   it("filtro de sexo usa as perguntas de sexo carregadas do banco", async () => {
-    vi.mocked(indicadorCalculoModel.perguntasDeSexo).mockResolvedValue(new Set(["sexo"]));
+    vi.mocked(indicadorCalculoModel.perguntasDeSexo).mockResolvedValue(new Map([["ps1", "sexo"]]));
     vi.mocked(indicadorCalculoModel.carregarRespostas).mockResolvedValue([
-      montarResposta("r1", [{ perguntaId: "cras", opcoesSelecionadas: ["Não"] }, { perguntaId: "sexo", opcoesSelecionadas: ["Feminino"] }]),
-      montarResposta("r2", [{ perguntaId: "cras", opcoesSelecionadas: ["Sim"] }, { perguntaId: "sexo", opcoesSelecionadas: ["Masculino"] }]),
+      montarResposta("r1", [{ perguntaId: "cras", opcoesSelecionadas: ["Não"] }, { perguntaId: "sexo", opcoesSelecionadas: ["Feminino"] }], "ps1"),
+      montarResposta("r2", [{ perguntaId: "cras", opcoesSelecionadas: ["Sim"] }, { perguntaId: "sexo", opcoesSelecionadas: ["Masculino"] }], "ps1"),
     ]);
     const res = await request(app).get("/api/indicadores/calculo?sexo=Feminino").set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
