@@ -150,7 +150,7 @@ describe("GET /api/pesquisas/:id/respostas", () => {
 
     const res = await request(app)
       .get("/api/pesquisas/p1/respostas")
-      .set("Authorization", `Bearer ${tokenVisualizador}`);
+      .set("Authorization", `Bearer ${tokenGestor}`);
 
     expect(res.status).toBe(200);
     expect(res.body.total).toBe(1);
@@ -165,11 +165,42 @@ describe("GET /api/pesquisas/:id/respostas", () => {
 
     const res = await request(app)
       .get("/api/pesquisas/p1/respostas?pageSize=999999")
-      .set("Authorization", `Bearer ${tokenVisualizador}`);
+      .set("Authorization", `Bearer ${tokenGestor}`);
 
     expect(res.status).toBe(200);
     expect(res.body.pageSize).toBe(PAGE_SIZE_MAX);
     expect(respostaModel.listar).toHaveBeenCalledWith("p1", expect.objectContaining({ pageSize: PAGE_SIZE_MAX }));
+  });
+
+  // As respostas trazem CPF, NIS e nome: o VISUALIZADOR fica com o resumo agregado.
+  it("6c) VISUALIZADOR não lista respostas individuais -> 403", async () => {
+    const res = await request(app)
+      .get("/api/pesquisas/p1/respostas")
+      .set("Authorization", `Bearer ${tokenVisualizador}`);
+
+    expect(res.status).toBe(403);
+    expect(respostaModel.listar).not.toHaveBeenCalled();
+  });
+
+  it("6d) COLETADOR lista só as respostas que ele coletou", async () => {
+    vi.mocked(pesquisaModel.obterPorId).mockResolvedValue({ id: "p1", status: "PUBLICADA", perguntas: [] } as never);
+    vi.mocked(respostaModel.listar).mockResolvedValue({ total: 0, itens: [] } as never);
+
+    const res = await request(app)
+      .get("/api/pesquisas/p1/respostas")
+      .set("Authorization", `Bearer ${tokenColetador}`);
+
+    expect(res.status).toBe(200);
+    expect(respostaModel.listar).toHaveBeenCalledWith("p1", expect.objectContaining({ coletadorId: "u2" }));
+  });
+
+  it("6e) GESTOR lista as de todos os coletadores", async () => {
+    vi.mocked(pesquisaModel.obterPorId).mockResolvedValue({ id: "p1", status: "PUBLICADA", perguntas: [] } as never);
+    vi.mocked(respostaModel.listar).mockResolvedValue({ total: 0, itens: [] } as never);
+
+    await request(app).get("/api/pesquisas/p1/respostas").set("Authorization", `Bearer ${tokenGestor}`);
+
+    expect(vi.mocked(respostaModel.listar).mock.calls[0]![1].coletadorId).toBeUndefined();
   });
 });
 
@@ -180,6 +211,47 @@ describe("GET /api/respostas/:id", () => {
     const res = await request(app).get("/api/respostas/inexistente").set("Authorization", `Bearer ${tokenGestor}`);
 
     expect(res.status).toBe(404);
+  });
+
+  it("7b) VISUALIZADOR não abre resposta individual -> 403", async () => {
+    vi.mocked(respostaModel.obterPorId).mockResolvedValue({ id: "r1", coletadorId: "u2" } as never);
+
+    const res = await request(app).get("/api/respostas/r1").set("Authorization", `Bearer ${tokenVisualizador}`);
+
+    expect(res.status).toBe(403);
+  });
+
+  it("7c) COLETADOR não abre resposta de outro coletador -> 403", async () => {
+    vi.mocked(respostaModel.obterPorId).mockResolvedValue({ id: "r1", coletadorId: "u9" } as never);
+
+    const res = await request(app).get("/api/respostas/r1").set("Authorization", `Bearer ${tokenColetador}`);
+
+    expect(res.status).toBe(403);
+  });
+
+  it("7d) COLETADOR abre a própria resposta -> 200", async () => {
+    vi.mocked(respostaModel.obterPorId).mockResolvedValue({ id: "r1", coletadorId: "u2" } as never);
+
+    const res = await request(app).get("/api/respostas/r1").set("Authorization", `Bearer ${tokenColetador}`);
+
+    expect(res.status).toBe(200);
+  });
+});
+
+describe("PUT /api/respostas/:id com a pesquisa fora de coleta", () => {
+  // Editar volta a resposta para PENDENTE e a tira do resumo e do export oficiais.
+  it.each(["ENCERRADA", "ARQUIVADA"])("pesquisa %s -> 409, nada é gravado", async (status) => {
+    vi.mocked(respostaModel.obterPorId).mockResolvedValue({ id: "r1", pesquisaId: "p1", coletadorId: "u1" } as never);
+    vi.mocked(pesquisaModel.obterPorId).mockResolvedValue({ id: "p1", status, perguntas: [] } as never);
+
+    const res = await request(app)
+      .put("/api/respostas/r1")
+      .set("Authorization", `Bearer ${tokenGestor}`)
+      .send({ itens: [{ perguntaId: UUID_PERGUNTA, valorTexto: "x" }] });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe("PESQUISA_NAO_PUBLICADA");
+    expect(respostaModel.atualizar).not.toHaveBeenCalled();
   });
 });
 

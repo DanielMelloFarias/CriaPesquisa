@@ -110,6 +110,11 @@ export async function atualizar(req: Request, res: Response) {
 
   const pesquisa = await pesquisaModel.obterPorId(atual.pesquisaId);
   if (!pesquisa) throw new HttpError(404, "NAO_ENCONTRADA", "Pesquisa não encontrada");
+  // Editar volta a resposta para PENDENTE, o que a tiraria do resumo e do export
+  // de uma pesquisa já fechada.
+  if (pesquisa.status !== "PUBLICADA") {
+    throw new HttpError(409, "PESQUISA_NAO_PUBLICADA", "pesquisa não está publicada");
+  }
 
   const dados = validarEPreparar(pesquisa.perguntas, req.body as AtualizarRespostaInput);
 
@@ -174,20 +179,26 @@ export async function reprovar(req: Request, res: Response) {
 }
 
 export async function listar(req: Request, res: Response) {
+  const usuario = req.usuario!;
   const { id: pesquisaId } = req.params;
 
   const pesquisa = await pesquisaModel.obterPorId(pesquisaId);
   if (!pesquisa) throw new HttpError(404, "NAO_ENCONTRADA", "Pesquisa não encontrada");
 
   const filtros = extrairFiltrosListagem(req.query);
+  if (usuario.papel === "COLETADOR") filtros.coletadorId = usuario.id;
   const { total, itens } = await respostaModel.listar(pesquisaId, filtros);
   res.json({ total, page: filtros.page, pageSize: filtros.pageSize, itens });
 }
 
 export async function obter(req: Request, res: Response) {
+  const usuario = req.usuario!;
   const { id } = req.params;
   const resposta = await respostaModel.obterPorId(id);
   if (!resposta) throw new HttpError(404, "NAO_ENCONTRADA", "Resposta não encontrada");
+  if (usuario.papel === "COLETADOR" && resposta.coletadorId !== usuario.id) {
+    throw new HttpError(403, "SEM_PERMISSAO", "Você não pode ver esta resposta");
+  }
   res.json({ resposta });
 }
 

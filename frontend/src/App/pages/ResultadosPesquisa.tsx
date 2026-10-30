@@ -188,7 +188,9 @@ export function ResultadosPesquisa() {
   const { data: lista } = usePesquisas();
   const { data: pesquisa, isLoading: carregandoP } = usePesquisa(id);
   const { data: resumo, isLoading: carregandoR } = useResumo(id);
-  const { data: registros } = useRespostas(id);
+  // Registros individuais trazem dados pessoais: o VISUALIZADOR fica só com o
+  // resumo, e o COLETADOR recebe da API apenas os que ele coletou.
+  const { data: registros } = useRespostas(responder ? id : undefined);
   const aprovar = useAprovarResposta();
   const reprovar = useReprovarResposta();
 
@@ -397,88 +399,91 @@ export function ResultadosPesquisa() {
         </>
       )}
 
-      <Card>
-        <SectionTitle>Registros por usuário</SectionTitle>
-        <Muted style={{ fontSize: 12.5, marginBottom: 12 }}>
-          Cada envio gera um registro. {revisar ? "Aprove ou reprove para os dados entrarem nos resultados." : "Somente o PO (Gestor) aprova ou reprova."}
-        </Muted>
-        {!registros || registros.itens.length === 0 ? (
-          <Muted style={{ textAlign: "center", padding: "18px 0" }}>Nenhum registro ainda.</Muted>
-        ) : (
-          <TableWrap>
-            <Tabela>
-              <thead>
-                <tr>
-                  <Th>Usuário</Th>
-                  <Th>Município</Th>
-                  <Th>Enviada</Th>
-                  <Th>Status</Th>
-                  <Th>Ações</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {registros.itens.map((r) => {
-                  const ehDono = r.coletador?.id === usuario?.id;
-                  const podeEditar = revisar || ehDono;
-                  return (
-                    <tr key={r.id}>
-                      <Td style={{ fontWeight: 600 }}>{r.coletador?.nome ?? "—"}</Td>
-                      <Td>{r.municipio ?? "—"}</Td>
-                      <Td>{new Date(r.enviadaEm).toLocaleDateString("pt-BR")}</Td>
-                      <Td>
-                        <StatusBadge $s={r.status}>
-                          <IconeStatus s={r.status} />
-                          {rotuloStatus[r.status]}
-                        </StatusBadge>
-                        {r.status === "REPROVADA" && r.observacao && (
-                          <Muted style={{ display: "block", fontSize: 11, marginTop: 3 }}>{r.observacao}</Muted>
-                        )}
-                      </Td>
-                      <Td>
-                        <Acoes>
-                          {podeEditar && (
-                            <MiniBtn
-                              type="button"
-                              onClick={() => navigate(`/pesquisas/${id}/responder?resposta=${r.id}`)}
-                              title="Editar resposta"
-                            >
-                              <Pencil size={12} /> Editar
-                            </MiniBtn>
+      {responder && (
+        <Card>
+          <SectionTitle>{revisar ? "Registros por usuário" : "Seus registros"}</SectionTitle>
+          <Muted style={{ fontSize: 12.5, marginBottom: 12 }}>
+            Cada envio gera um registro. {revisar ? "Aprove ou reprove para os dados entrarem nos resultados." : "Somente o PO (Gestor) aprova ou reprova."}
+          </Muted>
+          {!registros || registros.itens.length === 0 ? (
+            <Muted style={{ textAlign: "center", padding: "18px 0" }}>Nenhum registro ainda.</Muted>
+          ) : (
+            <TableWrap>
+              <Tabela>
+                <thead>
+                  <tr>
+                    <Th>Usuário</Th>
+                    <Th>Município</Th>
+                    <Th>Enviada</Th>
+                    <Th>Status</Th>
+                    <Th>Ações</Th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {registros.itens.map((r) => {
+                    const ehDono = r.coletador?.id === usuario?.id;
+                    // A API recusa edição fora de coleta (a resposta voltaria a PENDENTE).
+                    const podeEditar = (revisar || ehDono) && pesquisa?.status === "PUBLICADA";
+                    return (
+                      <tr key={r.id}>
+                        <Td style={{ fontWeight: 600 }}>{r.coletador?.nome ?? "—"}</Td>
+                        <Td>{r.municipio ?? "—"}</Td>
+                        <Td>{new Date(r.enviadaEm).toLocaleDateString("pt-BR")}</Td>
+                        <Td>
+                          <StatusBadge $s={r.status}>
+                            <IconeStatus s={r.status} />
+                            {rotuloStatus[r.status]}
+                          </StatusBadge>
+                          {r.status === "REPROVADA" && r.observacao && (
+                            <Muted style={{ display: "block", fontSize: 11, marginTop: 3 }}>{r.observacao}</Muted>
                           )}
-                          {revisar && r.status !== "APROVADA" && (
-                            <MiniBtn
-                              type="button"
-                              $tom="aprovar"
-                              disabled={aprovar.isPending}
-                              onClick={() => aprovar.mutate(r.id)}
-                              title="Aprovar"
-                            >
-                              <Check size={12} /> Aprovar
-                            </MiniBtn>
-                          )}
-                          {revisar && r.status !== "REPROVADA" && (
-                            <MiniBtn
-                              type="button"
-                              $tom="reprovar"
-                              onClick={() => {
-                                setReprovando(r);
-                                setObservacao("");
-                              }}
-                              title="Reprovar"
-                            >
-                              <X size={12} /> Reprovar
-                            </MiniBtn>
-                          )}
-                        </Acoes>
-                      </Td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </Tabela>
-          </TableWrap>
-        )}
-      </Card>
+                        </Td>
+                        <Td>
+                          <Acoes>
+                            {podeEditar && (
+                              <MiniBtn
+                                type="button"
+                                onClick={() => navigate(`/pesquisas/${id}/responder?resposta=${r.id}`)}
+                                title="Editar resposta"
+                              >
+                                <Pencil size={12} /> Editar
+                              </MiniBtn>
+                            )}
+                            {revisar && r.status !== "APROVADA" && (
+                              <MiniBtn
+                                type="button"
+                                $tom="aprovar"
+                                disabled={aprovar.isPending}
+                                onClick={() => aprovar.mutate(r.id)}
+                                title="Aprovar"
+                              >
+                                <Check size={12} /> Aprovar
+                              </MiniBtn>
+                            )}
+                            {revisar && r.status !== "REPROVADA" && (
+                              <MiniBtn
+                                type="button"
+                                $tom="reprovar"
+                                onClick={() => {
+                                  setReprovando(r);
+                                  setObservacao("");
+                                }}
+                                title="Reprovar"
+                              >
+                                <X size={12} /> Reprovar
+                              </MiniBtn>
+                            )}
+                          </Acoes>
+                        </Td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </Tabela>
+            </TableWrap>
+          )}
+        </Card>
+      )}
 
       {reprovando && (
         <Overlay

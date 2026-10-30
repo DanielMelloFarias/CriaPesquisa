@@ -17,8 +17,10 @@ respostaRoutes.post(
   validar(criarRespostaSchema),
   criar,
 );
-respostaRoutes.get("/pesquisas/:id/respostas", autenticar, listar);
-respostaRoutes.get("/respostas/:id", autenticar, obter);
+// Respostas individuais trazem CPF, NIS e nome: o VISUALIZADOR fica com o resumo
+// agregado (/resumo), e o COLETADOR só enxerga o que ele coletou (no controller).
+respostaRoutes.get("/pesquisas/:id/respostas", autenticar, exigirPapel(...COLETA), listar);
+respostaRoutes.get("/respostas/:id", autenticar, exigirPapel(...COLETA), obter);
 respostaRoutes.put(
   "/respostas/:id",
   autenticar,

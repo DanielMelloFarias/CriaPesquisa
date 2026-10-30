@@ -9,6 +9,8 @@ export interface ListarRespostasFiltros {
   status?: StatusResposta;
   de?: Date;
   ate?: Date;
+  /** Restringe ao que um coletador registrou (o COLETADOR só vê as próprias). */
+  coletadorId?: string;
   page?: number;
   pageSize?: number;
 }
@@ -21,6 +23,7 @@ function construirWhere(pesquisaId: string, filtros: ListarRespostasFiltros = {}
   if (filtros.regional) where.regional = filtros.regional;
   if (filtros.unidade) where.unidade = filtros.unidade;
   if (filtros.status) where.status = filtros.status;
+  if (filtros.coletadorId) where.coletadorId = filtros.coletadorId;
   if (filtros.de || filtros.ate) {
     where.enviadaEm = {
       ...(filtros.de ? { gte: filtros.de } : {}),
