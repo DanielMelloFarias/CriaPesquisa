@@ -76,6 +76,25 @@ describe("gerarCsv", () => {
     expect(csv).toContain('"Cidade, com vírgula"');
     expect(csv).toContain('"texto com ""aspas"""');
   });
+
+  // Texto livre que começa com = + - @ vira fórmula ao abrir o CSV no Excel.
+  it("neutraliza texto que o Excel leria como fórmula, sem mexer em número negativo", () => {
+    const respostaFormula: RespostaParaExport[] = [
+      {
+        id: "r3",
+        municipio: "@Maceió",
+        unidade: null,
+        regional: null,
+        enviadaEm: new Date("2026-01-01T00:00:00.000Z"),
+        itens: [
+          { perguntaId: "p-texto", valorTexto: "=1+1" },
+          { perguntaId: "p-numero", valorNumero: -5 },
+        ],
+      },
+    ];
+    const linha = gerarCsv(perguntas, respostaFormula).split("\r\n")[1]!;
+    expect(linha.split(",")).toEqual(["'@Maceió", "", "", "2026-01-01T00:00:00.000Z", "'=1+1", "-5", ""]);
+  });
 });
 
 describe("gerarXlsx", () => {

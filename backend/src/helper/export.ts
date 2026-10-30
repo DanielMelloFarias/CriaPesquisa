@@ -89,6 +89,16 @@ export function montarLinhasExport(perguntas: PerguntaParaExport[], respostas: R
   return [cabecalho, ...linhas];
 }
 
+/**
+ * Texto que começa com = + - @ (ou tab/CR) é lido como fórmula ao abrir o CSV no
+ * Excel. O apóstrofo na frente faz o Excel tratar como texto. Número (inclusive
+ * negativo) passa intacto. Só no CSV: no .xlsx a célula já é gravada como texto.
+ */
+function neutralizarFormula(valor: string): string {
+  if (/^[=+\-@\t\r]/.test(valor) && !/^[-+]?\d+(\.\d+)?$/.test(valor)) return `'${valor}`;
+  return valor;
+}
+
 function escaparCampoCsv(valor: string): string {
   if (/["\n,;]/.test(valor)) {
     return `"${valor.replace(/"/g, '""')}"`;
@@ -101,7 +111,9 @@ function escaparCampoCsv(valor: string): string {
  */
 export function gerarCsv(perguntas: PerguntaParaExport[], respostas: RespostaParaExport[]): string {
   const linhas = montarLinhasExport(perguntas, respostas);
-  const corpo = linhas.map((linha) => linha.map(escaparCampoCsv).join(",")).join("\r\n");
+  const corpo = linhas
+    .map((linha) => linha.map((campo) => escaparCampoCsv(neutralizarFormula(campo))).join(","))
+    .join("\r\n");
   const BOM = String.fromCharCode(0xfeff);
   return BOM + corpo;
 }

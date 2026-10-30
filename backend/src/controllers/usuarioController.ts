@@ -46,6 +46,12 @@ export async function atualizarUsuario(req: Request, res: Response) {
   const alvo = await usuarioModel.buscarPublicoPorId(id);
   if (!alvo) throw new HttpError(404, "NAO_ENCONTRADO", "Usuário não encontrado");
 
+  // Mesma regra do DELETE: quem está logado não se desativa nem muda o próprio
+  // papel — senão o sistema pode ficar sem nenhum ADMIN.
+  if (id === req.usuario!.id && (dados.ativo === false || (dados.papel && dados.papel !== alvo.papel))) {
+    throw new HttpError(403, "SEM_PERMISSAO", "Você não pode desativar nem mudar o papel de si mesmo");
+  }
+
   const senhaHash = dados.senha ? await hashSenha(dados.senha) : undefined;
   const usuario = await usuarioModel.atualizar(id, {
     nome: dados.nome,

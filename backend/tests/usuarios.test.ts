@@ -67,3 +67,37 @@ describe("usuarios", () => {
     expect(res.status).toBe(409);
   });
 });
+
+// O DELETE já impedia o admin de se desativar; o PUT deixava o mesmo efeito por
+// outro caminho (e também rebaixar o próprio papel), o que pode deixar o sistema
+// sem nenhum ADMIN.
+describe("PUT /api/usuarios/:id no próprio usuário", () => {
+  beforeEach(() => {
+    vi.mocked(usuarioModel.buscarPublicoPorId).mockResolvedValue({ id: "a1", papel: "ADMIN", ativo: true } as never);
+    vi.mocked(usuarioModel.atualizar).mockResolvedValue({ id: "a1" } as never);
+  });
+
+  it("ADMIN não se desativa -> 403", async () => {
+    const res = await request(app).put("/api/usuarios/a1").set("Authorization", `Bearer ${tokenAdmin}`).send({ ativo: false });
+    expect(res.status).toBe(403);
+    expect(usuarioModel.atualizar).not.toHaveBeenCalled();
+  });
+
+  it("ADMIN não rebaixa o próprio papel -> 403", async () => {
+    const res = await request(app).put("/api/usuarios/a1").set("Authorization", `Bearer ${tokenAdmin}`).send({ papel: "GESTOR" });
+    expect(res.status).toBe(403);
+    expect(usuarioModel.atualizar).not.toHaveBeenCalled();
+  });
+
+  it("ADMIN edita o próprio nome -> 200", async () => {
+    const res = await request(app).put("/api/usuarios/a1").set("Authorization", `Bearer ${tokenAdmin}`).send({ nome: "Novo Nome", ativo: true, papel: "ADMIN" });
+    expect(res.status).toBe(200);
+    expect(usuarioModel.atualizar).toHaveBeenCalledOnce();
+  });
+
+  it("ADMIN desativa outro usuário -> 200", async () => {
+    vi.mocked(usuarioModel.buscarPublicoPorId).mockResolvedValue({ id: "u5", papel: "COLETADOR", ativo: true } as never);
+    const res = await request(app).put("/api/usuarios/u5").set("Authorization", `Bearer ${tokenAdmin}`).send({ ativo: false });
+    expect(res.status).toBe(200);
+  });
+});

@@ -8,6 +8,13 @@ export class HttpError extends Error {
 }
 
 export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
+  // Erros do express.json(): o problema está no que o cliente mandou.
+  if (err?.type === "entity.parse.failed") {
+    return res.status(400).json({ error: { code: "JSON_INVALIDO", message: "Corpo da requisição não é um JSON válido" } });
+  }
+  if (err?.type === "entity.too.large") {
+    return res.status(413).json({ error: { code: "CORPO_GRANDE_DEMAIS", message: "Corpo da requisição grande demais" } });
+  }
   if (err instanceof ZodError) {
     return res.status(422).json({ error: { code: "VALIDACAO", message: "Dados inválidos", details: err.flatten() } });
   }
