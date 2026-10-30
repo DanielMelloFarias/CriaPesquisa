@@ -118,8 +118,13 @@ async function main() {
     prisma.usuario.findUnique({ where: { email: `admin${DOMINIO}` } }),
     prisma.usuario.findUnique({ where: { email: `gestor${DOMINIO}` } }),
   ]);
-  await seedMunicipios();
-  await seedBeneficios();
+  // Série mensal e composição de benefícios são dados de demonstração (a série é
+  // calculada com fatores fixos, até um mês que ainda não chegou). Em produção o
+  // painel os mostraria como números reais, então só entram fora de produção.
+  if (process.env.NODE_ENV !== "production") {
+    await seedMunicipios();
+    await seedBeneficios();
+  }
   if (admin && gestor) {
     await seedPesquisasCRIA(gestor.id, admin.id);
   }

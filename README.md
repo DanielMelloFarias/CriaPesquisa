@@ -66,7 +66,7 @@ npm run dev                 # http://localhost:5173
 | `SEED_PASSWORD` | não | Senha inicial das contas criadas pelo seed |
 | `SEED_EMAIL_DOMINIO` | não | Domínio dos e-mails das contas-base (padrão `@exemplo.local`) |
 | `CORS_ORIGIN` | não | Origens permitidas, separadas por vírgula |
-| `TRUST_PROXY` | **atrás de proxy** | Quantos proxies existem na frente da API (com um nginx, `1`). Sem isso o rate limit enxerga o IP do proxy e trata a instituição inteira como um IP só |
+| `TRUST_PROXY` | **atrás de proxy** | De quem aceitar o `X-Forwarded-For`. Atrás de proxies em rede privada (contêineres), `uniquelocal`; um número conta saltos. Sem isso o rate limit enxerga o IP do proxy e trata a instituição inteira como um IP só |
 
 ### `frontend/.env`
 
@@ -172,8 +172,9 @@ Sobem quatro serviços: `postgres`, `migracao` (aplica as migrations e sai), `ap
 (nginx servindo o front e encaminhando `/api`). A API só inicia depois que a migração termina
 bem. O Postgres **não expõe porta no host** (acesso administrativo só por túnel), e o TLS
 **termina num proxy à frente do `web`** — não sirva o sistema em HTTP na internet.
-`TRUST_PROXY=1` já vem no compose: é o que faz o limite de tentativas de login enxergar o IP
-real de quem chama.
+`TRUST_PROXY=uniquelocal` já vem no compose: é o que faz o limite de tentativas de login (e a
+auditoria) enxergar o IP real de quem chama, tanto com só o nginx na frente quanto com mais um
+proxy antes dele (o Traefik do Coolify, por exemplo).
 
 ### Primeira instalação
 
